@@ -1,7 +1,7 @@
 // Sqlite
 extern crate rusqlite;
-use rusqlite::{Connection, Row};
-use rusqlite::types::ToSql;
+mod db_util;
+use rusqlite::Connection;
 
 // Telega
 extern crate telegram_bot_raw;
@@ -13,7 +13,6 @@ use std::fs::File;
 use std::io::BufReader;
 use std::io::BufRead;
 use telegram_bot_raw::{Update,UpdateKind, User, Integer, MessageOrChannelPost};
-
 
 struct Db {
     conn: Connection,
@@ -142,99 +141,82 @@ impl Db {
             messages_by_user: Vec::new(),
         };
 
+        let args: &[(&str, &rusqlite::types::ToSql)] =
+            &[(":chat_id", &chat_id),
+              (":day_from", &dates.0),
+              (":day_to", &dates.1),
+              (":user_id", &user_id)];
+
         let mut prev_day = 0;
-        self.query_map_named("
+        db_util::query_map_named(
+            &mut self.conn, "
             SELECT day, COUNT(DISTINCT user_id), SUM(count)
               FROM messages
              WHERE chat_id = :chat_id
                AND day BETWEEN :day_from AND :day_to
                AND (:user_id = 0 OR :user_id = user_id)
              GROUP BY day
-        ", &[(":chat_id", &chat_id),
-             (":day_from", &dates.0),
-             (":day_to", &dates.1),
-             (":user_id", &user_id)],
-        |row| {
-            let (day, users, messages) = (row.get(0), row.get(1), row.get(2));
-            if result.start_day == 0 {
-                result.start_day = day;
-            } else {
-                for n in prev_day+1..day {
-                    result.daily_users.push(0);
-                    result.daily_messages.push(0);
+            ", args, |row| {
+                let day = row.get(0);
+                if result.start_day == 0 {
+                    result.start_day = day;
+                } else {
+                    for _ in prev_day+1..day {
+                        result.daily_users.push(0);
+                        result.daily_messages.push(0);
+                    }
                 }
-            }
-            prev_day = day;
-            result.daily_users.push(users);
-            result.daily_messages.push(messages);
-        });
+                prev_day = day;
+                result.daily_users.push(row.get(1));
+                result.daily_messages.push(row.get(2));
+            });
 
-        self.query_map_named("
+        db_util::query_map_named(
+            &mut self.conn, "
             SELECT hour, SUM(count)
               FROM messages
              WHERE chat_id = :chat_id
                AND day BETWEEN :day_from AND :day_to
                AND (:user_id = 0 OR :user_id = user_id)
              GROUP BY hour
-        ", &[(":chat_id", &chat_id),
-             (":day_from", &dates.0),
-             (":day_to", &dates.1),
-             (":user_id", &user_id)],
-        |row| {
-            let hour: i64 = row.get(0);
-            result.messages_by_hour[hour as usize] = row.get(1);
-        });
+            ", args, |row| {
+                let hour: i64 = row.get(0);
+                result.messages_by_hour[hour as usize] = row.get(1);
+            });
 
-        self.query_map_named("
-            SELECT (day+4)%7, SUM(count)
-              FROM messages
-             WHERE chat_id = :chat_id
-               AND day BETWEEN :day_from AND :day_to
-               AND (:user_id = 0 OR :user_id = user_id)
-             GROUP BY (day+4)%7
-        ", &[(":chat_id", &chat_id),
-             (":day_from", &dates.0),
-             (":day_to", &dates.1),
-             (":user_id", &user_id)],
-        |row| {
-            let weekday: i64 = row.get(0);
-            result.messages_by_weekday[weekday as usize] = row.get(1);
-        });
+        db_util::query_map_named(
+            &mut self.conn, "
+                SELECT (day+4)%7, SUM(count)
+                  FROM messages
+                 WHERE chat_id = :chat_id
+                   AND day BETWEEN :day_from AND :day_to
+                   AND (:user_id = 0 OR :user_id = user_id)
+                 GROUP BY (day+4)%7
+            ", args, |row| {
+                let weekday: i64 = row.get(0);
+                result.messages_by_weekday[weekday as usize] = row.get(1);
+            });
 
-        self.query_map_named("
-            SELECT messages.user_id, users.full_name, SUM(count)
-              FROM messages
-             INNER JOIN users ON users.user_id = messages.user_id
-             WHERE chat_id = :chat_id
-               AND day BETWEEN :day_from AND :day_to
-               AND (:user_id = 0 OR :user_id = messages.user_id)
-             GROUP BY(messages.user_id)
-             ORDER BY SUM(COUNT) DESC
-        ", &[(":chat_id", &chat_id),
-             (":day_from", &dates.0),
-             (":day_to", &dates.1),
-             (":user_id", &user_id)],
-        |row| {
-            result.user_names.push(row.get(1));
-            result.messages_by_user.push(row.get(2));
-        });
+        db_util::query_map_named(
+            &mut self.conn, "
+                SELECT messages.user_id, users.full_name, SUM(count)
+                  FROM messages
+                 INNER JOIN users ON users.user_id = messages.user_id
+                 WHERE chat_id = :chat_id
+                   AND day BETWEEN :day_from AND :day_to
+                   AND (:user_id = 0 OR :user_id = messages.user_id)
+                 GROUP BY(messages.user_id)
+                 ORDER BY SUM(COUNT) DESC
+            ", &[(":chat_id", &chat_id),
+                 (":day_from", &dates.0),
+                 (":day_to", &dates.1),
+                 (":user_id", &user_id)],
+            |row| {
+                result.user_names.push(row.get(1));
+                result.messages_by_user.push(row.get(2));
+            });
 
         result
-    }
-
-    fn query_map_named<F>(
-        self: &mut Self,
-        sql: &str,
-        params: &[(&str, &ToSql)],
-        f: F)
-    where F : FnMut(&Row) -> ()
-    {
-        let mut ff = f; // XXX: WTF?
-        let mut stmt = self.conn.prepare(sql).unwrap();
-        let rows = stmt.query_map_named(params, |row| {
-            ff(row);
-        }).unwrap();
-        for _ in rows { }
     }
 }
 
@@ -261,12 +243,9 @@ fn update_from_file(db: &mut Db) {
 fn main() {
     let mut db = Db::new();
     db.init();
-    // update_from_file(&mut db);
+    update_from_file(&mut db);
 
     println!("{}", serde_json::to_string(&
             db.query(-1001281121718, (0, 100000), 0)).unwrap()
              );
-
-    /*
-    */
 }
