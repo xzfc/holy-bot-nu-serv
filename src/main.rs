@@ -1,6 +1,7 @@
 // Sqlite
 extern crate rusqlite;
-use rusqlite::Connection;
+use rusqlite::{Connection, Row};
+use rusqlite::types::ToSql;
 
 // Telega
 extern crate telegram_bot_raw;
@@ -29,14 +30,6 @@ struct QueryResult {
 
     user_names: Vec<String>,
     messages_by_user: Vec<i64>,
-}
-
-macro_rules! penis {
-    ( $conn:expr, $sql:expr, $args:expr, $block:block ) => {
-        let mut stmt = $conn.prepare($sql).unwrap();
-        let rows = stmt.query_map($args, |row| $block);
-        for _ in rows { }
-    };
 }
 
 impl Db {
@@ -149,113 +142,99 @@ impl Db {
             messages_by_user: Vec::new(),
         };
 
-        {
-            let mut stmt = self.conn.prepare("
-                SELECT day, COUNT(DISTINCT user_id), SUM(count)
-                  FROM messages
-                 WHERE chat_id = :chat_id
-                   AND day BETWEEN :day_from AND :day_to
-                   AND (:user_id = 0 OR :user_id = user_id)
-                 GROUP BY day
-            ").unwrap();
-            let rows = stmt.query_map_named(
-                &[(":chat_id", &chat_id),
-                  (":day_from", &dates.0),
-                  (":day_to", &dates.1),
-                  (":user_id", &user_id)],
-                |row| -> (i64, i64, i64) {
-                    (row.get(0), row.get(1), row.get(2))
-                }).unwrap();
-            let mut prev_day = 0;
-            for r in rows {
-                let (day, users, messages) = r.unwrap();
-                if result.start_day == 0 {
-                    result.start_day = day;
-                } else {
-                    for n in prev_day+1..day {
-                        result.daily_users.push(0);
-                        result.daily_messages.push(0);
-                    }
+        let mut prev_day = 0;
+        self.query_map_named("
+            SELECT day, COUNT(DISTINCT user_id), SUM(count)
+              FROM messages
+             WHERE chat_id = :chat_id
+               AND day BETWEEN :day_from AND :day_to
+               AND (:user_id = 0 OR :user_id = user_id)
+             GROUP BY day
+        ", &[(":chat_id", &chat_id),
+             (":day_from", &dates.0),
+             (":day_to", &dates.1),
+             (":user_id", &user_id)],
+        |row| {
+            let (day, users, messages) = (row.get(0), row.get(1), row.get(2));
+            if result.start_day == 0 {
+                result.start_day = day;
+            } else {
+                for n in prev_day+1..day {
+                    result.daily_users.push(0);
+                    result.daily_messages.push(0);
                 }
-                prev_day = day;
-                result.daily_users.push(users);
-                result.daily_messages.push(messages);
             }
-        }
+            prev_day = day;
+            result.daily_users.push(users);
+            result.daily_messages.push(messages);
+        });
 
-        {
-            let mut stmt = self.conn.prepare("
-                SELECT hour, SUM(count)
-                  FROM messages
-                 WHERE chat_id = :chat_id
-                   AND day BETWEEN :day_from AND :day_to
-                   AND (:user_id = 0 OR :user_id = user_id)
-                 GROUP BY hour
-            ").unwrap();
-            let rows = stmt.query_map_named(
-                &[(":chat_id", &chat_id),
-                  (":day_from", &dates.0),
-                  (":day_to", &dates.1),
-                  (":user_id", &user_id)],
-                |row| -> (i64, i64) {
-                    (row.get(0), row.get(1))
-                }).unwrap();
-            for r in rows {
-                let (hour, messages) = r.unwrap();
-                result.messages_by_hour[hour as usize] = messages;
-            }
-        }
+        self.query_map_named("
+            SELECT hour, SUM(count)
+              FROM messages
+             WHERE chat_id = :chat_id
+               AND day BETWEEN :day_from AND :day_to
+               AND (:user_id = 0 OR :user_id = user_id)
+             GROUP BY hour
+        ", &[(":chat_id", &chat_id),
+             (":day_from", &dates.0),
+             (":day_to", &dates.1),
+             (":user_id", &user_id)],
+        |row| {
+            let hour: i64 = row.get(0);
+            result.messages_by_hour[hour as usize] = row.get(1);
+        });
 
-        {
-            let mut stmt = self.conn.prepare("
-                SELECT (day+4)%7, SUM(count)
-                  FROM messages
-                 WHERE chat_id = :chat_id
-                   AND day BETWEEN :day_from AND :day_to
-                   AND (:user_id = 0 OR :user_id = user_id)
-                 GROUP BY (day+4)%7
-            ").unwrap();
-            let rows = stmt.query_map_named(
-                &[(":chat_id", &chat_id),
-                  (":day_from", &dates.0),
-                  (":day_to", &dates.1),
-                  (":user_id", &user_id)],
-                |row| -> (i64, i64) {
-                    (row.get(0), row.get(1))
-                }).unwrap();
-            for r in rows {
-                let (weekday, messages) = r.unwrap();
-                result.messages_by_weekday[weekday as usize] = messages;
-            }
-        }
+        self.query_map_named("
+            SELECT (day+4)%7, SUM(count)
+              FROM messages
+             WHERE chat_id = :chat_id
+               AND day BETWEEN :day_from AND :day_to
+               AND (:user_id = 0 OR :user_id = user_id)
+             GROUP BY (day+4)%7
+        ", &[(":chat_id", &chat_id),
+             (":day_from", &dates.0),
+             (":day_to", &dates.1),
+             (":user_id", &user_id)],
+        |row| {
+            let weekday: i64 = row.get(0);
+            result.messages_by_weekday[weekday as usize] = row.get(1);
+        });
 
-        {
-            let mut stmt = self.conn.prepare("
-                SELECT messages.user_id, users.full_name, SUM(count)
-                  FROM messages
-                 INNER JOIN users ON users.user_id = messages.user_id
-                 WHERE chat_id = :chat_id
-                   AND day BETWEEN :day_from AND :day_to
-                   AND (:user_id = 0 OR :user_id = messages.user_id)
-                 GROUP BY(messages.user_id)
-                 ORDER BY SUM(COUNT) DESC
-            ").unwrap();
-            let rows = stmt.query_map_named(
-                &[(":chat_id", &chat_id),
-                  (":day_from", &dates.0),
-                  (":day_to", &dates.1),
-                  (":user_id", &user_id)],
-                |row| -> (String, i64) {
-                    (row.get(1), row.get(2))
-                }).unwrap();
-            for r in rows {
-                let (full_name, messages) = r.unwrap();
-                result.user_names.push(full_name);
-                result.messages_by_user.push(messages);
-            }
-        }
+        self.query_map_named("
+            SELECT messages.user_id, users.full_name, SUM(count)
+              FROM messages
+             INNER JOIN users ON users.user_id = messages.user_id
+             WHERE chat_id = :chat_id
+               AND day BETWEEN :day_from AND :day_to
+               AND (:user_id = 0 OR :user_id = messages.user_id)
+             GROUP BY(messages.user_id)
+             ORDER BY SUM(COUNT) DESC
+        ", &[(":chat_id", &chat_id),
+             (":day_from", &dates.0),
+             (":day_to", &dates.1),
+             (":user_id", &user_id)],
+        |row| {
+            result.user_names.push(row.get(1));
+            result.messages_by_user.push(row.get(2));
+        });
 
         result
+    }
+
+    fn query_map_named<F>(
+        self: &mut Self,
+        sql: &str,
+        params: &[(&str, &ToSql)],
+        f: F)
+    where F : FnMut(&Row) -> ()
+    {
+        let mut ff = f; // XXX: WTF?
+        let mut stmt = self.conn.prepare(sql).unwrap();
+        let rows = stmt.query_map_named(params, |row| {
+            ff(row);
+        }).unwrap();
+        for _ in rows { }
     }
 }
 
