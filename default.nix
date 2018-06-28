@@ -10,5 +10,5 @@ let sqlite-3-24 = sqlite.overrideAttrs (x: rec {
 in
 stdenv.mkDerivation {
   name = "batch";
-  nativeBuildInputs = [ cargo rustc sqlite-3-24 ];
+  nativeBuildInputs = [ cargo rustc sqlite-3-24 rustfmt ];
 }
