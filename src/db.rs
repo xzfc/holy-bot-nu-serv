@@ -6,7 +6,7 @@ use serde_json;
 use std::fs::File;
 use std::io::BufReader;
 use std::io::BufRead;
-use telegram_bot_raw::{Update,UpdateKind, User, Integer, MessageOrChannelPost};
+use telegram_bot_raw::{Update, UpdateKind, User, Integer, MessageOrChannelPost};
 
 pub struct Db {
     conn: Connection,
@@ -27,9 +27,7 @@ pub struct QueryResult {
 
 impl Db {
     pub fn new() -> Self {
-        Db {
-            conn: Connection::open("1.db").unwrap(),
-        }
+        Db { conn: Connection::open("1.db").unwrap() }
     }
 
     pub fn init(self: &mut Self) {
@@ -41,7 +39,8 @@ impl Db {
                 hour    INTEGER,
                 count   INTEGER,
                 PRIMARY KEY (chat_id, user_id, day, hour)
-            )", &[]).unwrap();
+            )
+            ", &[]).unwrap();
 
         self.conn.execute("
             CREATE INDEX IF NOT EXISTS messages_i0
@@ -58,7 +57,8 @@ impl Db {
                 user_id   INTEGER,
                 full_name TEXT,
                 PRIMARY KEY (user_id)
-            )", &[]).unwrap();
+            )
+            ", &[]).unwrap();
 
         self.conn.execute("
             CREATE TABLE IF NOT EXISTS replies (
@@ -67,7 +67,8 @@ impl Db {
                 uid_to   INTEGER,
                 count    INTEGER,
                 PRIMARY KEY (chat_id, uid_from, uid_to)
-            )", &[]).unwrap();
+            )
+            ", &[]).unwrap();
     }
 
     pub fn update_from_file(self: &mut Self, path: &str) {
@@ -78,21 +79,24 @@ impl Db {
         let mut n = 0;
         for line in file.lines() {
             let line = line.unwrap();
-            let a  = serde_json::from_str::<Update>(&line);
+            let a = serde_json::from_str::<Update>(&line);
             n += 1;
-            if n % 1000 == 0 { println!("{}", n); }
+            if n % 1000 == 0 {
+                println!("{}", n);
+            }
             match a {
                 Ok(upd) => self.update(upd),
-                Err(err) => println!("Line: {}\nError: {}\n", line, err)
+                Err(err) => println!("Line: {}\nError: {}\n", line, err),
             }
         }
 
         self.commit();
     }
 
-/******************************************************************************/
-/*                             Private functions                              */
-/******************************************************************************/
+    /**************************************************************************/
+    /*                           Private functions                            */
+    /**************************************************************************/
+
 
     fn begin(self: &mut Self) {
         self.conn.execute("BEGIN", &[]).unwrap();
@@ -111,7 +115,8 @@ impl Db {
         self.conn.execute("
             INSERT OR REPLACE INTO users VALUES
             ( ?1, ?2 )
-        ", &[&Integer::from(user.id), &full_name]).unwrap();
+            ", &[&Integer::from(user.id), &full_name]
+            ).unwrap();
     }
 
     fn update(self: &mut Self, upd: Update) {
@@ -121,10 +126,12 @@ impl Db {
                 ( ?1, ?2, ?3, ?4, 1 )
                 ON CONFLICT (chat_id, user_id, day, hour)
                 DO UPDATE SET count = count + 1
-            ", &[&Integer::from(msg.chat.id()),
-                 &Integer::from(msg.from.id),
-                 &(msg.date/60/60/24),
-                 &(msg.date/60/60%24)]).unwrap();
+            ", &[
+                &Integer::from(msg.chat.id()),
+                &Integer::from(msg.from.id),
+                &(msg.date/60/60/24),
+                &(msg.date/60/60%24),
+            ]).unwrap();
 
             self.update_user(&msg.from);
 
@@ -135,9 +142,11 @@ impl Db {
                         ( ?1, ?2, ?3, 1 )
                         ON CONFLICT (chat_id, uid_from, uid_to)
                         DO UPDATE SET count = count + 1
-                    ", &[&Integer::from(msg.chat.id()),
-                         &Integer::from(msg.from.id),
-                         &Integer::from(reply.from.id)]).unwrap();
+                        ", &[
+                            &Integer::from(msg.chat.id()),
+                            &Integer::from(msg.from.id),
+                            &Integer::from(reply.from.id),
+                        ]).unwrap();
 
                     self.update_user(&reply.from);
                 }
@@ -145,8 +154,12 @@ impl Db {
         }
     }
 
-    pub fn query(self: &mut Self, chat_id: i64, dates: (i64, i64),
-            user_id: i64) -> QueryResult {
+    pub fn query(
+        self: &mut Self,
+        chat_id: i64,
+        dates: (i64, i64),
+        user_id: i64,
+    ) -> QueryResult {
         let mut result = QueryResult {
             start_day: 0,
             daily_users: Vec::new(),
@@ -161,24 +174,27 @@ impl Db {
             (":chat_id", &chat_id),
             (":day_from", &dates.0),
             (":day_to", &dates.1),
-            (":user_id", &user_id)
+            (":user_id", &user_id),
         ];
 
         let mut prev_day = 0;
         db_util::query_map_named(
-            &mut self.conn, "
-            SELECT day, COUNT(DISTINCT user_id), SUM(count)
-              FROM messages
-             WHERE chat_id = :chat_id
-               AND day BETWEEN :day_from AND :day_to
-               AND (:user_id = 0 OR :user_id = user_id)
-             GROUP BY day
-            ", args, |row| {
+            &mut self.conn,
+            "
+                SELECT day, COUNT(DISTINCT user_id), SUM(count)
+                  FROM messages
+                 WHERE chat_id = :chat_id
+                   AND day BETWEEN :day_from AND :day_to
+                   AND (:user_id = 0 OR :user_id = user_id)
+                 GROUP BY day
+            ",
+            args,
+            |row| {
                 let day = row.get(0);
                 if result.start_day == 0 {
                     result.start_day = day;
                 } else {
-                    for _ in prev_day+1..day {
+                    for _ in prev_day + 1..day {
                         result.daily_users.push(0);
                         result.daily_messages.push(0);
                     }
@@ -186,36 +202,46 @@ impl Db {
                 prev_day = day;
                 result.daily_users.push(row.get(1));
                 result.daily_messages.push(row.get(2));
-            });
+            },
+        );
 
         db_util::query_map_named(
-            &mut self.conn, "
-            SELECT hour, SUM(count)
-              FROM messages
-             WHERE chat_id = :chat_id
-               AND day BETWEEN :day_from AND :day_to
-               AND (:user_id = 0 OR :user_id = user_id)
-             GROUP BY hour
-            ", args, |row| {
+            &mut self.conn,
+            "
+                SELECT hour, SUM(count)
+                  FROM messages
+                 WHERE chat_id = :chat_id
+                   AND day BETWEEN :day_from AND :day_to
+                   AND (:user_id = 0 OR :user_id = user_id)
+                 GROUP BY hour
+            ",
+            args,
+            |row| {
                 let hour: i64 = row.get(0);
                 result.messages_by_hour[hour as usize] = row.get(1);
-            });
+            },
+        );
 
         db_util::query_map_named(
-            &mut self.conn, "
+            &mut self.conn,
+            "
                 SELECT (day+4)%7, SUM(count)
                   FROM messages
                  WHERE chat_id = :chat_id
                    AND day BETWEEN :day_from AND :day_to
                    AND (:user_id = 0 OR :user_id = user_id)
                  GROUP BY (day+4)%7
-            ", args, |row| {
+            ",
+            args,
+            |row| {
                 let weekday: i64 = row.get(0);
                 result.messages_by_weekday[weekday as usize] = row.get(1);
-            });
+            },
+        );
 
         db_util::query_map_named(
-            &mut self.conn, "
+            &mut self.conn,
+            "
                 SELECT messages.user_id, users.full_name, SUM(count)
                   FROM messages
                  INNER JOIN users ON users.user_id = messages.user_id
@@ -224,14 +250,18 @@ impl Db {
                    AND (:user_id = 0 OR :user_id = messages.user_id)
                  GROUP BY(messages.user_id)
                  ORDER BY SUM(COUNT) DESC
-            ", &[(":chat_id", &chat_id),
-                 (":day_from", &dates.0),
-                 (":day_to", &dates.1),
-                 (":user_id", &user_id)],
+            ",
+            &[
+                (":chat_id", &chat_id),
+                (":day_from", &dates.0),
+                (":day_to", &dates.1),
+                (":user_id", &user_id),
+            ],
             |row| {
                 result.user_names.push(row.get(1));
                 result.messages_by_user.push(row.get(2));
-            });
+            },
+        );
 
         result
     }
