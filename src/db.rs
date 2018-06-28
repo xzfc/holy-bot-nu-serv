@@ -26,8 +26,8 @@ pub struct QueryResult {
 }
 
 impl Db {
-    pub fn new() -> Self {
-        Db { conn: Connection::open("1.db").unwrap() }
+    pub fn new(path: &str) -> Self {
+        Db { conn: Connection::open(path).unwrap() }
     }
 
     pub fn init(self: &mut Self) {

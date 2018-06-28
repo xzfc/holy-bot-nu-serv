@@ -10,7 +10,7 @@ mod db_util;
 
 fn main() {
     let mut db = db::Db::new();
-    db.init();
+    db.init("1.db");
     db.update_from_file("/n/Dev2/HolyCrackers/n/identity/data/b2");
 
     println!(
