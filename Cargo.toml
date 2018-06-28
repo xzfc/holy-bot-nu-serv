@@ -1,0 +1,13 @@
+[package]
+name = "batch"
+version = "0.1.0"
+authors = ["Albert Safin <xzfcpw@gmail.com>"]
+
+[dependencies]
+rusqlite = "0.11.0"
+# telegram-bot = "0.6"
+telegram-bot-raw = "0.6"
+
+serde = "1.0.67"
+serde_derive = "1.0.67"
+serde_json = "1.0.22" 

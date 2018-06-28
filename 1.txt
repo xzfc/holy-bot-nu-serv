@@ -1,0 +1,12 @@
+{
+    start_day: 123,
+
+    daily_messages = [3,2,1,2,3], # n
+    daily_users    = [2,1,1,2,1], # n
+
+    messages_by_hour    = [0,0,0,1,3,4], # 24
+    messages_by_weekday = [1,2,3,4,5,6], # 7
+
+    user_names:['akio','bakio'],
+    messages_by_user:[123,321]
+}
