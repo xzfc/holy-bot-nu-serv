@@ -40,12 +40,12 @@ pub fn process_log<T: LogProcessor>(
         };
     }
 
-    let mut f = File::open(fname)?;
+    let f = File::open(fname)?;
     let mut f = BufReader::new(&f);
 
-    let mut total_bytes = 0;
+    let mut total_bytes: u64 = 0;
     if let Some(pos) = processor.begin()? {
-        println!("fseek {}", pos);
+        eprintln!("process_log: fseek {}", pos);
         total_bytes += pos;
         try_abort!( f.seek(SeekFrom::Start(pos)) );
     }
@@ -64,11 +64,11 @@ pub fn process_log<T: LogProcessor>(
         lineno += 1;
         try_abort!( processor.process_line(&line) );
         if lineno % 1000 == 0 {
-            println!("Line {}", lineno);
+            eprintln!("process_log: line {}", lineno);
             try_abort!( processor.commit(total_bytes) );
             let ensure_total_bytes = processor.begin()?;
             if ensure_total_bytes != Some(total_bytes) {
-                println!("ensure_total_bytes != total_bytes");
+                eprintln!("process_log: error ensure_total_bytes != total_bytes");
                 return Ok(()) // TODO: return error
             }
         }

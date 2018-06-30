@@ -5,9 +5,6 @@ use super::serde_json;
 use super::process_log;
 use super::error::MyError;
 
-use std::fs::File;
-use std::io::BufReader;
-use std::io::BufRead;
 use telegram_bot_raw::{Update, UpdateKind, User, Integer, MessageOrChannelPost, MessageChat};
 
 use rand::{thread_rng, Rng};
@@ -83,21 +80,13 @@ impl Db {
 
     pub fn update_from_file(self: &mut Self, path: &str) {
         let err = process_log::process_log(path, self);
-        println!("err = {:?}", err);
+        eprintln!("err = {:?}", err);
     }
 
     /**************************************************************************/
     /*                           Private functions                            */
     /**************************************************************************/
 
-
-    fn begin(self: &mut Self) {
-        self.conn.execute("BEGIN", &[]).unwrap();
-    }
-
-    fn commit(self: &mut Self) {
-        self.conn.execute("COMMIT", &[]).unwrap();
-    }
 
     fn update_user(self: &mut Self, user: &User) {
         let full_name = match &user.last_name {
@@ -116,7 +105,8 @@ impl Db {
         self: &mut Self,
         id: i64, 
         title: &String,
-        username: &Option<String>)
+        username: &Option<String>,
+        ) -> Result<(), MyError>
     {
         let val = self.conn.execute("
             UPDATE chats
@@ -127,7 +117,7 @@ impl Db {
                 &id,
                 title,
                 username,
-            ]).unwrap();
+            ])?;
         if val == 0 {
             self.conn.execute("
                 INSERT INTO chats VALUES
@@ -137,11 +127,12 @@ impl Db {
                     title,
                     username,
                     &random_id(),
-                ]).unwrap();
+                ])?;
         }
+        Ok(())
     }
 
-    fn update(self: &mut Self, upd: Update) {
+    fn update(self: &mut Self, upd: Update) -> Result<(), MyError> {
         if let UpdateKind::Message(msg) = upd.kind {
             self.conn.execute("
                 INSERT INTO messages VALUES
@@ -153,25 +144,25 @@ impl Db {
                 &Integer::from(msg.from.id),
                 &(msg.date/60/60/24),
                 &(msg.date/60/60%24),
-            ]).unwrap();
+            ])?;
 
             self.update_user(&msg.from);
 
             match &msg.chat {
-                MessageChat::Private(_) => return,
-                MessageChat::Unknown(_) => return,
+                MessageChat::Private(_) => return Ok(()),
+                MessageChat::Unknown(_) => return Ok(()),
                 MessageChat::Group(c)   =>
                     self.update_chat(
                         Integer::from(c.id),
                         &c.title,
                         &None,
-                    ),
+                    )?,
                 MessageChat::Supergroup(c) =>
                     self.update_chat(
                         Integer::from(c.id),
                         &c.title,
                         &c.username,
-                    ),
+                    )?,
             }
 
             if let Some(reply) = msg.reply_to_message {
@@ -185,12 +176,14 @@ impl Db {
                             &Integer::from(msg.chat.id()),
                             &Integer::from(msg.from.id),
                             &Integer::from(reply.from.id),
-                        ]).unwrap();
+                        ])?;
 
                     self.update_user(&reply.from);
                 }
             }
         }
+
+        Ok(())
     }
 
     pub fn query(
@@ -328,9 +321,9 @@ impl process_log::LogProcessor for Db {
     }
     fn process_line(&mut self, line: &String) -> Result<(), Self::Error> {
         match serde_json::from_str::<Update>(line) {
-            Ok(upd) => { self.update(upd); Ok(()) },
+            Ok(upd) => { self.update(upd) },
             Err(err) => {
-                println!("Line: {}\nParse error: {}\n", line, err);
+                eprintln!("Line: {}\nParse error: {}\n", line, err);
                 Ok(())
             }
         }

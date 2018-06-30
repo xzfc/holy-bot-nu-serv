@@ -27,9 +27,9 @@ pub fn execute_many(
         match conn.execute(sql, &[]) {
             Ok(_) => (),
             Err(e) => {
-                println!("Error while executing following statement:");
-                println!("\x1b[2m{}\x1b[m", sql.trim());
-                println!("\x1b[31m{}\x1b[m", e);
+                eprintln!("Error while executing following statement:");
+                eprintln!("\x1b[2m{}\x1b[m", sql.trim());
+                eprintln!("\x1b[31m{}\x1b[m", e);
                 exit(1);
             }
         }
