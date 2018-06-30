@@ -6,7 +6,9 @@ use serde_json;
 use std::fs::File;
 use std::io::BufReader;
 use std::io::BufRead;
-use telegram_bot_raw::{Update, UpdateKind, User, Integer, MessageOrChannelPost};
+use telegram_bot_raw::{Update, UpdateKind, User, Integer, MessageOrChannelPost, MessageChat};
+
+use rand::{thread_rng, Rng};
 
 pub struct Db {
     conn: Connection,
@@ -31,7 +33,7 @@ impl Db {
     }
 
     pub fn init(self: &mut Self) {
-        self.conn.execute("
+        db_util::execute_many(&mut self.conn, "
             CREATE TABLE IF NOT EXISTS messages (
                 chat_id INTEGER,
                 user_id INTEGER,
@@ -39,36 +41,36 @@ impl Db {
                 hour    INTEGER,
                 count   INTEGER,
                 PRIMARY KEY (chat_id, user_id, day, hour)
-            )
-            ", &[]).unwrap();
+            );
 
-        self.conn.execute("
             CREATE INDEX IF NOT EXISTS messages_i0
-            ON messages ( chat_id, day )
-            ", &[]).unwrap();
+            ON messages ( chat_id, day );
 
-        self.conn.execute("
             CREATE INDEX IF NOT EXISTS messages_i1
-            ON messages ( chat_id, (day+4) % 7 )
-            ", &[]).unwrap();
+            ON messages ( chat_id, (day+4) % 7 );
 
-        self.conn.execute("
             CREATE TABLE IF NOT EXISTS users (
                 user_id   INTEGER,
                 full_name TEXT,
                 PRIMARY KEY (user_id)
-            )
-            ", &[]).unwrap();
+            );
 
-        self.conn.execute("
             CREATE TABLE IF NOT EXISTS replies (
                 chat_id  INTEGER,
                 uid_from INTEGER,
                 uid_to   INTEGER,
                 count    INTEGER,
                 PRIMARY KEY (chat_id, uid_from, uid_to)
-            )
-            ", &[]).unwrap();
+            );
+
+            CREATE TABLE IF NOT EXISTS chats (
+                chat_id   INTEGER,
+                title     TEXT NOT NULL,
+                username  TEXT,
+                random_id TEXT NOT NULL,
+                PRIMARY KEY (chat_id)
+            );
+            ");
     }
 
     pub fn update_from_file(self: &mut Self, path: &str) {
@@ -119,6 +121,35 @@ impl Db {
             ).unwrap();
     }
 
+    fn update_chat(
+        self: &mut Self,
+        id: i64, 
+        title: &String,
+        username: &Option<String>)
+    {
+        let val = self.conn.execute("
+            UPDATE chats
+               SET title = ?2
+                 , username = ?3
+             WHERE chat_id = ?1
+            ", &[
+                &id,
+                title,
+                username,
+            ]).unwrap();
+        if val == 0 {
+            self.conn.execute("
+                INSERT INTO chats VALUES
+                ( ?1, ?2, ?3, ?4 )
+                ", &[
+                    &id,
+                    title,
+                    username,
+                    &random_id(),
+                ]).unwrap();
+        }
+    }
+
     fn update(self: &mut Self, upd: Update) {
         if let UpdateKind::Message(msg) = upd.kind {
             self.conn.execute("
@@ -134,6 +165,23 @@ impl Db {
             ]).unwrap();
 
             self.update_user(&msg.from);
+
+            match &msg.chat {
+                MessageChat::Private(_) => return,
+                MessageChat::Unknown(_) => return,
+                MessageChat::Group(c)   =>
+                    self.update_chat(
+                        Integer::from(c.id),
+                        &c.title,
+                        &None,
+                    ),
+                MessageChat::Supergroup(c) =>
+                    self.update_chat(
+                        Integer::from(c.id),
+                        &c.title,
+                        &c.username,
+                    ),
+            }
 
             if let Some(reply) = msg.reply_to_message {
                 if let MessageOrChannelPost::Message(reply) = *reply {
@@ -251,12 +299,7 @@ impl Db {
                  GROUP BY(messages.user_id)
                  ORDER BY SUM(COUNT) DESC
             ",
-            &[
-                (":chat_id", &chat_id),
-                (":day_from", &dates.0),
-                (":day_to", &dates.1),
-                (":user_id", &user_id),
-            ],
+            args,
             |row| {
                 result.user_names.push(row.get(1));
                 result.messages_by_user.push(row.get(2));
@@ -265,4 +308,21 @@ impl Db {
 
         result
     }
+}
+
+
+fn random_id() -> String {
+    let mut result = String::from("");
+    let mut rng = thread_rng();
+    for _ in 0..32 {
+        let v = (rng.gen::<u32>() % (10+26+26)) as u8;
+        let v = v + match v {
+            00..=09 => '0' as u8,
+            10..=35 => 'a' as u8 - 10,
+            36..=61 => 'A' as u8 - 36,
+            _ => 0,
+        };
+        result.push(v as char);
+    }
+    result
 }

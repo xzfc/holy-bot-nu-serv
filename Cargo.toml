@@ -7,6 +7,7 @@ authors = ["Albert Safin <xzfcpw@gmail.com>"]
 rusqlite = "0.11.0"
 # telegram-bot = "0.6"
 telegram-bot-raw = "0.6"
+rand = "0.5.3"
 
 serde = "1.0.67"
 serde_derive = "1.0.67"
