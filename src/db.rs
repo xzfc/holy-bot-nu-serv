@@ -31,53 +31,6 @@ impl Db {
         Db { conn: Connection::open(path).unwrap() }
     }
 
-    pub fn init(self: &mut Self) {
-        db_util::execute_many(&mut self.conn, "
-            CREATE TABLE IF NOT EXISTS messages (
-                chat_id INTEGER,
-                user_id INTEGER,
-                day     INTEGER,
-                hour    INTEGER,
-                count   INTEGER,
-                PRIMARY KEY (chat_id, user_id, day, hour)
-            );
-
-            CREATE INDEX IF NOT EXISTS messages_i0
-            ON messages ( chat_id, day );
-
-            CREATE INDEX IF NOT EXISTS messages_i1
-            ON messages ( chat_id, (day+4) % 7 );
-
-            CREATE TABLE IF NOT EXISTS users (
-                user_id   INTEGER,
-                full_name TEXT,
-                PRIMARY KEY (user_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS replies (
-                chat_id  INTEGER,
-                uid_from INTEGER,
-                uid_to   INTEGER,
-                count    INTEGER,
-                PRIMARY KEY (chat_id, uid_from, uid_to)
-            );
-
-            CREATE TABLE IF NOT EXISTS chats (
-                chat_id   INTEGER,
-                title     TEXT NOT NULL,
-                username  TEXT,
-                random_id TEXT NOT NULL,
-                PRIMARY KEY (chat_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS seek (
-                name  TEXT,
-                value INTEGER,
-                PRIMARY KEY (name)
-            );
-            ");
-    }
-
     pub fn update_from_file(self: &mut Self, path: &str) {
         let err = process_log::process_log(path, self);
         eprintln!("err = {:?}", err);
@@ -88,7 +41,7 @@ impl Db {
     /**************************************************************************/
 
 
-    fn update_user(self: &mut Self, user: &User) {
+    fn update_user(self: &mut Self, user: &User) -> Result<(), MyError> {
         let full_name = match &user.last_name {
             Some(last_name) => format!("{} {}", user.first_name, last_name),
             // XXX: actually, cloning here is redundant
@@ -98,7 +51,8 @@ impl Db {
             INSERT OR REPLACE INTO users VALUES
             ( ?1, ?2 )
             ", &[&Integer::from(user.id), &full_name]
-            ).unwrap();
+            )?;
+        Ok(())
     }
 
     fn update_chat(
@@ -108,6 +62,7 @@ impl Db {
         username: &Option<String>,
         ) -> Result<(), MyError>
     {
+        let username = username.clone().map(|x| format!("@{}", x));
         let val = self.conn.execute("
             UPDATE chats
                SET title = ?2
@@ -116,7 +71,7 @@ impl Db {
             ", &[
                 &id,
                 title,
-                username,
+                &username,
             ])?;
         if val == 0 {
             self.conn.execute("
@@ -125,7 +80,7 @@ impl Db {
                 ", &[
                     &id,
                     title,
-                    username,
+                    &username,
                     &random_id(),
                 ])?;
         }
@@ -146,7 +101,7 @@ impl Db {
                 &(msg.date/60/60%24),
             ])?;
 
-            self.update_user(&msg.from);
+            self.update_user(&msg.from)?;
 
             match &msg.chat {
                 MessageChat::Private(_) => return Ok(()),
@@ -178,7 +133,7 @@ impl Db {
                             &Integer::from(reply.from.id),
                         ])?;
 
-                    self.update_user(&reply.from);
+                    self.update_user(&reply.from)?;
                 }
             }
         }
@@ -188,10 +143,17 @@ impl Db {
 
     pub fn query(
         self: &mut Self,
-        chat_id: i64,
+        chat: &str,
         dates: (i64, i64),
         user_id: i64,
-    ) -> QueryResult {
+    ) -> String {
+        let chat_id = match self.search_chat(chat) {
+            Some(chat_id) => chat_id,
+            None => {
+                return String::from(r#"{"eroor":"chat not found"}"#);
+            }
+        };
+
         let mut result = QueryResult {
             start_day: 0,
             daily_users: Vec::new(),
@@ -290,7 +252,27 @@ impl Db {
             },
         );
 
-        result
+        serde_json::to_string(&result).unwrap()
+    }
+
+    fn search_chat(
+        &mut self,
+        chat: &str,
+    ) -> Option<i64> {
+        let res = self.conn.query_row(
+            "
+                SELECT chat_id
+                  FROM chats
+                 WHERE username = ?1
+                    OR random_id = ?1
+            ",
+            &[&chat],
+            |row| row.get::<_,i64>(0)
+            );
+        match res {
+            Ok(x) => Some(x),
+            Err(_) => None,
+        }
     }
 }
 

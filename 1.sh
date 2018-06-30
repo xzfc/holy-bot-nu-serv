@@ -40,7 +40,9 @@ q() {
 #      ORDER BY SUM(COUNT) DESC
 # '
 
-q 'replies square' '
-    SELECT *
-      FROM replies
-'
+# q 'replies square' '
+#     SELECT *
+#       FROM replies
+# '
+
+q ''

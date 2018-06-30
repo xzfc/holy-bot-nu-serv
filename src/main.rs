@@ -6,19 +6,30 @@ extern crate serde_json;
 extern crate serde_derive;
 extern crate rand;
 
+use std::env::args;
+
 mod db;
 mod db_util;
 mod process_log;
 mod error;
 
 fn main() {
-    let mut db = db::Db::new("1.db");
-    db.init();
-    db.update_from_file("/n/Dev2/HolyCrackers/n/identity/data/b2");
-
-    println!(
-        "{}",
-        serde_json::to_string(&db.query(-1001103425247, (0, 100000), 0))
-            .unwrap()
-    );
+    let args: Vec<String> = args().collect();
+    match args.get(1).unwrap_or(&String::new()).as_ref() {
+        "sync-tg" => {
+            let mut db = db::Db::new(&args[2]);
+            db.update_from_file(&args[3]);
+        }
+        "server" => {
+            let mut db = db::Db::new(&args[2]);
+            // TODO
+        }
+        "get-chat" => {
+            let mut db = db::Db::new(&args[2]);
+            println!("{}", db.query(&args[3], (0, 100000), 0));
+        }
+        _ => {
+            eprintln!("Invalid arguments");
+        }
+    }
 }
