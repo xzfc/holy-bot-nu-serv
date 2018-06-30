@@ -41,25 +41,40 @@ pub fn process_log<T: LogProcessor>(
     }
 
     let mut f = File::open(fname)?;
+    let mut f = BufReader::new(&f);
 
+    let mut total_bytes = 0;
     if let Some(pos) = processor.begin()? {
         println!("fseek {}", pos);
+        total_bytes += pos;
         try_abort!( f.seek(SeekFrom::Start(pos)) );
     }
 
-    let mut n = 0;
-    for line in BufReader::new(&f).lines() {
-        let line = try_abort!(line);
-        n += 1;
-        if n % 1000 == 0 {
-            println!("Line {}", n);
+    let mut lineno = 0;
+    loop {
+        let mut line = String::new();
+        let read_bytes = try_abort!( f.read_line(&mut line) );
+        if read_bytes == 0 {
+            break;
         }
+        if line.ends_with("\n") {
+            line.pop();
+        }
+        total_bytes += read_bytes as u64;
+        lineno += 1;
         try_abort!( processor.process_line(&line) );
+        if lineno % 1000 == 0 {
+            println!("Line {}", lineno);
+            try_abort!( processor.commit(total_bytes) );
+            let ensure_total_bytes = processor.begin()?;
+            if ensure_total_bytes != Some(total_bytes) {
+                println!("ensure_total_bytes != total_bytes");
+                return Ok(()) // TODO: return error
+            }
+        }
     }
 
-    let current = try_abort!( f.seek(SeekFrom::Current(0)) );
-
-    try_abort!( processor.commit(current) );
+    try_abort!( processor.commit(total_bytes) );
 
     Ok(())
 }

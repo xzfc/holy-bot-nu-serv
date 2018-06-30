@@ -82,7 +82,8 @@ impl Db {
     }
 
     pub fn update_from_file(self: &mut Self, path: &str) {
-        process_log::process_log(path, self);
+        let err = process_log::process_log(path, self);
+        println!("err = {:?}", err);
     }
 
     /**************************************************************************/
@@ -316,13 +317,13 @@ impl process_log::LogProcessor for Db {
     }
     fn commit(&mut self, end_pos: u64) -> Result<(), Self::Error> {
         self.conn.execute(
-            "INSERT INTO seek VALUES ('telegram', ?)",
-            &[])?;
+            "INSERT OR REPLACE INTO seek VALUES ('telegram', ?)",
+            &[&(end_pos as i64)])?;
         self.conn.execute("COMMIT", &[])?;
         Ok(())
     }
     fn abort(&mut self) -> Result<(), Self::Error> {
-        self.conn.execute("ABORT", &[])?;
+        self.conn.execute("ROLLBACK", &[])?;
         Ok(())
     }
     fn process_line(&mut self, line: &String) -> Result<(), Self::Error> {
