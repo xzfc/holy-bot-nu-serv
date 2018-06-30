@@ -1,7 +1,9 @@
 use rusqlite::Connection;
 use rusqlite::types::ToSql;
-use db_util;
-use serde_json;
+use super::db_util;
+use super::serde_json;
+use super::process_log;
+use super::error::MyError;
 
 use std::fs::File;
 use std::io::BufReader;
@@ -70,29 +72,17 @@ impl Db {
                 random_id TEXT NOT NULL,
                 PRIMARY KEY (chat_id)
             );
+
+            CREATE TABLE IF NOT EXISTS seek (
+                name  TEXT,
+                value INTEGER,
+                PRIMARY KEY (name)
+            );
             ");
     }
 
     pub fn update_from_file(self: &mut Self, path: &str) {
-        self.begin();
-
-        let f = File::open(path).unwrap();
-        let file = BufReader::new(&f);
-        let mut n = 0;
-        for line in file.lines() {
-            let line = line.unwrap();
-            let a = serde_json::from_str::<Update>(&line);
-            n += 1;
-            if n % 1000 == 0 {
-                println!("{}", n);
-            }
-            match a {
-                Ok(upd) => self.update(upd),
-                Err(err) => println!("Line: {}\nError: {}\n", line, err),
-            }
-        }
-
-        self.commit();
+        process_log::process_log(path, self);
     }
 
     /**************************************************************************/
@@ -310,6 +300,41 @@ impl Db {
     }
 }
 
+impl process_log::LogProcessor for Db {
+    type Error = MyError;
+    fn begin(&mut self) -> Result<Option<u64>, Self::Error> {
+        self.conn.execute("BEGIN", &[])?;
+        let seek = self.conn
+            .query_row(
+                "SELECT value FROM seek WHERE name = 'telegram'",
+                &[],
+                |row| row.get::<_,i64>(0));
+        match seek {
+            Ok(value) => Ok(Some(value as u64)),
+            Err(_) => Ok(None),
+        }
+    }
+    fn commit(&mut self, end_pos: u64) -> Result<(), Self::Error> {
+        self.conn.execute(
+            "INSERT INTO seek VALUES ('telegram', ?)",
+            &[])?;
+        self.conn.execute("COMMIT", &[])?;
+        Ok(())
+    }
+    fn abort(&mut self) -> Result<(), Self::Error> {
+        self.conn.execute("ABORT", &[])?;
+        Ok(())
+    }
+    fn process_line(&mut self, line: &String) -> Result<(), Self::Error> {
+        match serde_json::from_str::<Update>(line) {
+            Ok(upd) => { self.update(upd); Ok(()) },
+            Err(err) => {
+                println!("Line: {}\nParse error: {}\n", line, err);
+                Ok(())
+            }
+        }
+    }
+}
 
 fn random_id() -> String {
     let mut result = String::from("");

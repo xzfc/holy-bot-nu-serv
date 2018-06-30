@@ -8,6 +8,8 @@ extern crate rand;
 
 mod db;
 mod db_util;
+mod process_log;
+mod error;
 
 fn main() {
     let mut db = db::Db::new("1.db");
