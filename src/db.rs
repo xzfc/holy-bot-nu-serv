@@ -1,9 +1,9 @@
 use rusqlite::Connection;
 use rusqlite::types::ToSql;
 use super::db_util;
-use super::serde_json;
-use super::process_log;
 use super::error::MyError;
+use super::process_log;
+use super::serde_json;
 
 use telegram_bot_raw::{Update, UpdateKind, User, Integer, MessageOrChannelPost, MessageChat};
 
@@ -22,6 +22,7 @@ pub struct QueryResult {
     messages_by_hour: [i64; 24],
     messages_by_weekday: [i64; 7],
 
+    user_ids: Vec<String>,
     user_names: Vec<String>,
     messages_by_user: Vec<i64>,
 }
@@ -40,7 +41,7 @@ impl Db {
         &self,
         chat: &str,
         dates: Option<(i64, i64)>,
-        user_id: Option<i64>,
+        user_id: Option<&str>,
     ) -> (u16 ,String) {
         match self.query_inner(chat, dates, user_id) {
             Ok(res) => res,
@@ -59,11 +60,19 @@ impl Db {
             // XXX: actually, cloning here is redundant
             None => user.first_name.clone(),
         };
-        self.conn.execute("
-            INSERT OR REPLACE INTO users VALUES
-            ( ?1, ?2 )
-            ", &[&Integer::from(user.id), &full_name]
-            )?;
+
+        let val = self.conn.execute("
+            UPDATE users
+               SET full_name = ?2
+             WHERE user_id = ?1
+            ", &[&Integer::from(user.id), &full_name])?;
+
+        if val == 0 {
+            self.conn.execute("
+                INSERT INTO users VALUES
+                ( ?1, ?2, ?3 )
+                ", &[&Integer::from(user.id), &full_name, &random_id()])?;
+        }
         Ok(())
     }
 
@@ -157,12 +166,12 @@ impl Db {
         &self,
         chat: &str,
         dates: Option<(i64, i64)>,
-        user_id: Option<i64>,
+        user_rid: Option<&str>,
     ) -> Result<(u16, String), MyError> {
         let chat_id = match self.search_chat(chat) {
             Some(chat_id) => chat_id,
             None => {
-                return Ok((404, String::from(r#"{"eroor":"chat not found"}"#)));
+                return Ok((404, String::from(r#"{"error":"chat not found"}"#)));
             }
         };
 
@@ -172,17 +181,29 @@ impl Db {
             daily_messages: Vec::new(),
             messages_by_hour: [0; 24],
             messages_by_weekday: [0; 7],
+            user_ids: Vec::new(),
             user_names: Vec::new(),
             messages_by_user: Vec::new(),
         };
 
+        let mut _user_id: i64 = 0; // XXX
         let mut args: Vec<(&str, &ToSql)> = Vec::new();
         args.push((":chat_id", &chat_id));
 
         let mut filter = String::from("");
-        if let Some(user_id) = user_id.as_ref() {
+        if let Some(user_rid) = user_rid.as_ref() {
+            let user_id =
+                match self.search_user(user_rid) {
+                    Some(user_id) => user_id,
+                    None =>
+                        return Ok((
+                                404, String::from(
+                                    r#"{"error":"user not found"}"#))),
+                };
+
             filter += "AND :user_id = messages.user_id ";
-            args.push((":user_id",  user_id));
+            _user_id = user_id;
+            args.push((":user_id",  &_user_id));
         }
         if let Some(dates) = dates.as_ref() {
             filter += "AND day BETWEEN :day_from AND :day_to ";
@@ -253,7 +274,9 @@ impl Db {
         db_util::query_map_named(
             &self.conn,
             format!("
-                SELECT messages.user_id, users.full_name, SUM(count)
+                SELECT users.random_id,
+                       users.full_name,
+                       SUM(count)
                   FROM messages
                  INNER JOIN users ON users.user_id = messages.user_id
                  WHERE chat_id = :chat_id
@@ -263,6 +286,7 @@ impl Db {
             ", filter).as_ref(),
             &args,
             |row| {
+                result.user_ids.push(row.get(0));
                 result.user_names.push(row.get(1));
                 result.messages_by_user.push(row.get(2));
             },
@@ -281,6 +305,22 @@ impl Db {
             ",
             &[&chat],
             |row| row.get::<_,i64>(0)
+            );
+        match res {
+            Ok(x) => Some(x),
+            Err(_) => None,
+        }
+    }
+
+    fn search_user(&self, random_id: &str) -> Option<i64> {
+        let res = self.conn.query_row(
+            "
+                SELECT user_id
+                  FROM users
+                 WHERE random_id = ?
+            ",
+            &[&random_id],
+            |row| row.get::<_, i64>(0)
             );
         match res {
             Ok(x) => Some(x),
@@ -328,7 +368,7 @@ impl process_log::LogProcessor for Db {
 fn random_id() -> String {
     let mut result = String::from("");
     let mut rng = thread_rng();
-    for _ in 0..32 {
+    for _ in 0..8 {
         let v = (rng.gen::<u32>() % (10+26+26)) as u8;
         let v = v + match v {
             00..=09 => '0' as u8,

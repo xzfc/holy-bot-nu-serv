@@ -17,11 +17,18 @@ ON messages ( chat_id, day );
 CREATE INDEX IF NOT EXISTS messages_i1
 ON messages ( chat_id, (day+4) % 7 );
 
+CREATE INDEX IF NOT EXISTS messages_i2
+ON messages ( chat_id, user_id );
+
 CREATE TABLE IF NOT EXISTS users (
-    user_id   INTEGER,
-    full_name TEXT,
+    user_id   INTEGER NOT NULL,
+    full_name TEXT NOT NULL,
+    random_id TEXT NOT NULL,
     PRIMARY KEY (user_id)
 );
+
+CREATE INDEX IF NOT EXISTS users_i0
+ON users ( full_name );
 
 CREATE TABLE IF NOT EXISTS replies (
     chat_id  INTEGER,
@@ -38,6 +45,9 @@ CREATE TABLE IF NOT EXISTS chats (
     random_id TEXT NOT NULL,
     PRIMARY KEY (chat_id)
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS chats_u0
+ON chats ( random_id );
 
 CREATE TABLE IF NOT EXISTS seek (
     name  TEXT,
