@@ -1,11 +1,12 @@
+extern crate hyper;
+extern crate rand;
 extern crate rusqlite;
-extern crate telegram_bot_raw;
 extern crate serde;
-extern crate serde_json;
 #[macro_use]
 extern crate serde_derive;
-extern crate rand;
-extern crate hyper;
+extern crate serde_json;
+extern crate telegram_bot_raw;
+extern crate url;
 
 use std::env::args;
 
@@ -28,7 +29,10 @@ fn main() {
         }
         "get-chat" => {
             let mut db = db::Db::new(&args[2]);
-            println!("{}", db.query(&args[3], (0, 100000), 0));
+            match db.query_inner(&args[3], None, None) {
+                Ok((status, res)) => println!("Status: {}\n{}", status, res),
+                Err(err) => println!("Error:\n{:?}", err),
+            }
         }
         _ => {
             eprintln!("Invalid arguments");

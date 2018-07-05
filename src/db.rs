@@ -36,6 +36,18 @@ impl Db {
         eprintln!("err = {:?}", err);
     }
 
+    pub fn query(
+        &self,
+        chat: &str,
+        dates: Option<(i64, i64)>,
+        user_id: Option<i64>,
+    ) -> (u16 ,String) {
+        match self.query_inner(chat, dates, user_id) {
+            Ok(res) => res,
+            Err(e) => (500, format!("Error:\n{:?}", e)),
+        }
+    }
+
     /**************************************************************************/
     /*                           Private functions                            */
     /**************************************************************************/
@@ -141,16 +153,16 @@ impl Db {
         Ok(())
     }
 
-    pub fn query(
+    pub fn query_inner(
         &self,
         chat: &str,
-        dates: (i64, i64),
-        user_id: i64,
-    ) -> String {
+        dates: Option<(i64, i64)>,
+        user_id: Option<i64>,
+    ) -> Result<(u16, String), MyError> {
         let chat_id = match self.search_chat(chat) {
             Some(chat_id) => chat_id,
             None => {
-                return String::from(r#"{"eroor":"chat not found"}"#);
+                return Ok((404, String::from(r#"{"eroor":"chat not found"}"#)));
             }
         };
 
@@ -164,24 +176,31 @@ impl Db {
             messages_by_user: Vec::new(),
         };
 
-        let args: &[(&str, &ToSql)] = &[
-            (":chat_id", &chat_id),
-            (":day_from", &dates.0),
-            (":day_to", &dates.1),
-            (":user_id", &user_id),
-        ];
+        let mut args: Vec<(&str, &ToSql)> = Vec::new();
+        args.push((":chat_id", &chat_id));
+
+        let mut filter = String::from("");
+        if let Some(user_id) = user_id.as_ref() {
+            filter += "AND :user_id = messages.user_id ";
+            args.push((":user_id",  user_id));
+        }
+        if let Some(dates) = dates.as_ref() {
+            filter += "AND day BETWEEN :day_from AND :day_to ";
+            args.push((":day_from", &dates.0));
+            args.push((":day_to",   &dates.1));
+        }
+        let args = args.as_slice();
 
         let mut prev_day = 0;
         db_util::query_map_named(
             &self.conn,
-            "
+            format!("
                 SELECT day, COUNT(DISTINCT user_id), SUM(count)
                   FROM messages
                  WHERE chat_id = :chat_id
-                   AND day BETWEEN :day_from AND :day_to
-                   AND (:user_id = 0 OR :user_id = user_id)
+                       {}
                  GROUP BY day
-            ",
+            ", filter).as_ref(),
             args,
             |row| {
                 let day = row.get(0);
@@ -197,62 +216,59 @@ impl Db {
                 result.daily_users.push(row.get(1));
                 result.daily_messages.push(row.get(2));
             },
-        );
+        )?;
 
         db_util::query_map_named(
             &self.conn,
-            "
+            format!("
                 SELECT hour, SUM(count)
                   FROM messages
                  WHERE chat_id = :chat_id
-                   AND day BETWEEN :day_from AND :day_to
-                   AND (:user_id = 0 OR :user_id = user_id)
+                       {}
                  GROUP BY hour
-            ",
-            args,
+            ", filter).as_ref(),
+            &args,
             |row| {
                 let hour: i64 = row.get(0);
                 result.messages_by_hour[hour as usize] = row.get(1);
             },
-        );
+        )?;
 
         db_util::query_map_named(
             &self.conn,
-            "
+            format!("
                 SELECT (day+4)%7, SUM(count)
                   FROM messages
                  WHERE chat_id = :chat_id
-                   AND day BETWEEN :day_from AND :day_to
-                   AND (:user_id = 0 OR :user_id = user_id)
+                       {}
                  GROUP BY (day+4)%7
-            ",
-            args,
+            ", filter).as_ref(),
+            &args,
             |row| {
                 let weekday: i64 = row.get(0);
                 result.messages_by_weekday[weekday as usize] = row.get(1);
             },
-        );
+        )?;
 
         db_util::query_map_named(
             &self.conn,
-            "
+            format!("
                 SELECT messages.user_id, users.full_name, SUM(count)
                   FROM messages
                  INNER JOIN users ON users.user_id = messages.user_id
                  WHERE chat_id = :chat_id
-                   AND day BETWEEN :day_from AND :day_to
-                   AND (:user_id = 0 OR :user_id = messages.user_id)
+                       {}
                  GROUP BY(messages.user_id)
                  ORDER BY SUM(COUNT) DESC
-            ",
-            args,
+            ", filter).as_ref(),
+            &args,
             |row| {
                 result.user_names.push(row.get(1));
                 result.messages_by_user.push(row.get(2));
             },
-        );
+        )?;
 
-        serde_json::to_string(&result).unwrap()
+        return Ok((200, serde_json::to_string(&result).unwrap()))
     }
 
     fn search_chat(&self, chat: &str) -> Option<i64> {

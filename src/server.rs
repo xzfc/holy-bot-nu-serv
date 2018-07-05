@@ -1,4 +1,4 @@
-use hyper::{Body, Request, Response, Server};
+use hyper::{Body, Response, Server};
 use hyper;
 use hyper::rt::Future;
 use hyper::service::service_fn_ok;
@@ -6,6 +6,65 @@ use hyper::service::service_fn_ok;
 use db::Db;
 use std::sync::Mutex;
 use std::sync::Arc;
+
+use url::form_urlencoded;
+
+struct StatsArgs<'a> {
+    chat: &'a str,
+    dates: Option<(i64, i64)>,
+    user_id: Option<i64>,
+}
+
+enum Args<'a> {
+    Stats(StatsArgs<'a>),
+    Unknown,
+    Invalid,
+}
+
+fn parse_stats<'a>(uri: &'a hyper::Uri) -> Args<'a> { 
+    macro_rules! try2 {
+        ($e:expr) => {
+            match $e {
+                Ok(x) => x,
+                Err(_) => return Args::Invalid,
+            }
+        };
+    }
+
+    let query = form_urlencoded::parse(
+        uri.query().unwrap_or("").as_bytes()
+    );
+
+    let segments: Vec<&str> = uri.path()[1..].split('/').collect();
+
+    if segments.len() == 2 && segments[0] == "stats" {
+        let mut from = None;
+        let mut to = None;
+        let mut user_id = None;
+        for (key, val) in query {
+            match &*key {
+                "from"    => from    = Some(try2!(val.parse())),
+                "to"      => to      = Some(try2!(val.parse())),
+                "user_id" => user_id = Some(try2!(val.parse())),
+                _ => return Args::Invalid,
+            }
+        }
+
+        let dates = match (from, to) {
+            (Some(from), Some(to)) => Some((from, to)),
+            (None, None) => None,
+            _ => return Args::Invalid,
+        };
+
+        return Args::Stats(StatsArgs {
+            chat: segments[1],
+            dates: dates,
+            user_id: user_id,
+        })
+    }
+
+    return Args::Unknown
+}
 
 pub fn run(db: Db) {
     let addr = ([127, 0, 0, 1], 3000).into();
@@ -15,20 +74,24 @@ pub fn run(db: Db) {
         let db = db.clone();
         service_fn_ok(move |req| {
             let db = db.lock().unwrap();
-            match req.uri().path() {
-                "/stats" => {
-                    let text = db.query("@caninas", (0, 100000), 0);
+            match parse_stats(req.uri()) {
+                Args::Stats(x) => {
+                    let (status, text) = db.query(x.chat, x.dates, x.user_id);
                     Response::builder()
                         .header("Access-Control-Allow-Origin", "*")
-                        .status(200)
+                        .status(status)
                         .body(Body::from(text))
                 }
-                _ => {
+                Args::Unknown => 
                     Response::builder()
                         .header("Access-Control-Allow-Origin", "*")
                         .status(404)
-                        .body(Body::from("404"))
-                }
+                        .body(Body::from("404")),
+                Args::Invalid => 
+                    Response::builder()
+                        .header("Access-Control-Allow-Origin", "*")
+                        .status(400)
+                        .body(Body::from("404")),
             }.unwrap()
         })
     };
