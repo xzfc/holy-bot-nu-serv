@@ -57,11 +57,31 @@ CREATE TABLE IF NOT EXISTS seek (
 '
 }
 
+mx_init() {
+sqlite3 1.db '
+DELETE FROM chats WHERE chat_id = 1;
+DELETE FROM users WHERE user_id < 0;
+DELETE FROM messages WHERE chat_id = 1;
+
+INSERT INTO chats VALUES
+(1, "Софтач", "s:pyos.anoosdy.org", "oSh2oop6");
+'
+	local i
+	for i in /n/Dev/Matrix-History-Grabber/data/*;do
+		echo $i
+		./target/debug/batch sync-mx 1.db $i
+	done
+}
+
 # BIN=./target/debug/batch
 # TG_LOG=/n/Dev2/HolyCrackers/n/identity/data/b2
 # BIN_LOG=log.txt
 
-init_db
+
+# init_db
+# mx_init
+"$@"
+
 # while :;do
 #     date
 #     $BIN sync-tg 1.db /n/Dev2/HolyCrackers/n/identity/data/b2 2> $BIN_LOG

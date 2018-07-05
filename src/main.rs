@@ -11,6 +11,7 @@ extern crate url;
 use std::env::args;
 
 mod db;
+mod db_mx;
 mod db_util;
 mod process_log;
 mod error;
@@ -21,6 +22,10 @@ fn main() {
     match args.get(1).unwrap_or(&String::new()).as_ref() {
         "sync-tg" => {
             let mut db = db::Db::new(&args[2]);
+            db.update_from_file(&args[3]);
+        }
+        "sync-mx" => {
+            let mut db = db_mx::Db::new(&args[2]);
             db.update_from_file(&args[3]);
         }
         "server" => {
