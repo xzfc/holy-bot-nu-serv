@@ -207,12 +207,15 @@ impl Db {
         }
         if let Some(dates) = dates.as_ref() {
             filter += "AND day BETWEEN :day_from AND :day_to ";
+            result.start_day = dates.0;
+
             args.push((":day_from", &dates.0));
             args.push((":day_to",   &dates.1));
         }
         let args = args.as_slice();
 
-        let mut prev_day = 0;
+        println!("WOOF[");
+        let mut prev_day = result.start_day - 1;
         db_util::query_map_named(
             &self.conn,
             format!("
@@ -228,7 +231,8 @@ impl Db {
                 if result.start_day == 0 {
                     result.start_day = day;
                 } else {
-                    for _ in prev_day + 1..day {
+                    for d in prev_day + 1..day {
+                        println!("  day {}", d);
                         result.daily_users.push(0);
                         result.daily_messages.push(0);
                     }
@@ -236,8 +240,16 @@ impl Db {
                 prev_day = day;
                 result.daily_users.push(row.get(1));
                 result.daily_messages.push(row.get(2));
+                println!("  day {}: +{}", day, row.get::<_, i64>(2));
             },
         )?;
+        if let Some(dates) = dates.as_ref() {
+            for d in prev_day..dates.1 {
+                println!("  day {}~", d);
+                result.daily_users.push(0);
+                result.daily_messages.push(0);
+            }
+        }
 
         db_util::query_map_named(
             &self.conn,
@@ -258,11 +270,11 @@ impl Db {
         db_util::query_map_named(
             &self.conn,
             format!("
-                SELECT (day+4)%7, SUM(count)
+                SELECT (day+3)%7, SUM(count)
                   FROM messages
                  WHERE chat_id = :chat_id
                        {}
-                 GROUP BY (day+4)%7
+                 GROUP BY (day+3)%7
             ", filter).as_ref(),
             &args,
             |row| {
