@@ -5,6 +5,7 @@ extern crate serde_json;
 #[macro_use]
 extern crate serde_derive;
 extern crate rand;
+extern crate hyper;
 
 use std::env::args;
 
@@ -12,6 +13,7 @@ mod db;
 mod db_util;
 mod process_log;
 mod error;
+mod server;
 
 fn main() {
     let args: Vec<String> = args().collect();
@@ -22,7 +24,7 @@ fn main() {
         }
         "server" => {
             let mut db = db::Db::new(&args[2]);
-            // TODO
+            server::run(db);
         }
         "get-chat" => {
             let mut db = db::Db::new(&args[2]);

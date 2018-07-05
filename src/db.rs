@@ -142,7 +142,7 @@ impl Db {
     }
 
     pub fn query(
-        self: &mut Self,
+        &self,
         chat: &str,
         dates: (i64, i64),
         user_id: i64,
@@ -173,7 +173,7 @@ impl Db {
 
         let mut prev_day = 0;
         db_util::query_map_named(
-            &mut self.conn,
+            &self.conn,
             "
                 SELECT day, COUNT(DISTINCT user_id), SUM(count)
                   FROM messages
@@ -200,7 +200,7 @@ impl Db {
         );
 
         db_util::query_map_named(
-            &mut self.conn,
+            &self.conn,
             "
                 SELECT hour, SUM(count)
                   FROM messages
@@ -217,7 +217,7 @@ impl Db {
         );
 
         db_util::query_map_named(
-            &mut self.conn,
+            &self.conn,
             "
                 SELECT (day+4)%7, SUM(count)
                   FROM messages
@@ -234,7 +234,7 @@ impl Db {
         );
 
         db_util::query_map_named(
-            &mut self.conn,
+            &self.conn,
             "
                 SELECT messages.user_id, users.full_name, SUM(count)
                   FROM messages
@@ -255,10 +255,7 @@ impl Db {
         serde_json::to_string(&result).unwrap()
     }
 
-    fn search_chat(
-        &mut self,
-        chat: &str,
-    ) -> Option<i64> {
+    fn search_chat(&self, chat: &str) -> Option<i64> {
         let res = self.conn.query_row(
             "
                 SELECT chat_id
