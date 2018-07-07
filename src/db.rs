@@ -214,7 +214,6 @@ impl Db {
         }
         let args = args.as_slice();
 
-        println!("WOOF[");
         let mut prev_day = result.start_day - 1;
         db_util::query_map_named(
             &self.conn,
@@ -232,7 +231,6 @@ impl Db {
                     result.start_day = day;
                 } else {
                     for d in prev_day + 1..day {
-                        println!("  day {}", d);
                         result.daily_users.push(0);
                         result.daily_messages.push(0);
                     }
@@ -240,12 +238,10 @@ impl Db {
                 prev_day = day;
                 result.daily_users.push(row.get(1));
                 result.daily_messages.push(row.get(2));
-                println!("  day {}: +{}", day, row.get::<_, i64>(2));
             },
         )?;
         if let Some(dates) = dates.as_ref() {
             for d in prev_day..dates.1 {
-                println!("  day {}~", d);
                 result.daily_users.push(0);
                 result.daily_messages.push(0);
             }

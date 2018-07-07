@@ -16,6 +16,8 @@ mod db_util;
 mod process_log;
 mod error;
 mod server;
+mod db_tg;
+use rusqlite::Connection;
 
 fn main() {
     let args: Vec<String> = args().collect();
@@ -23,6 +25,10 @@ fn main() {
         "sync-tg" => {
             let mut db = db::Db::new(&args[2]);
             db.update_from_file(&args[3]);
+        }
+        "sync-tg2" => {
+            let mut conn = Connection::open(&args[2]).unwrap();
+            db_tg::update_from_file(&mut conn, &args[3]);
         }
         "sync-mx" => {
             let mut db = db_mx::Db::new(&args[2]);
