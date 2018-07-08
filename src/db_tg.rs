@@ -1,5 +1,4 @@
 use rusqlite::Connection;
-use rusqlite::types::ToSql;
 use super::db_util;
 use super::error::MyError;
 use super::process_log;

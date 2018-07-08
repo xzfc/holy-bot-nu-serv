@@ -46,7 +46,7 @@ pub fn query(
     user_rid: Option<&str>,
 ) -> Result<(u16, String), MyError> {
 
-    if (offset < -12 || offset > 12) {
+    if offset < -12 || offset > 12 {
         return Ok((400, String::from(ERR_INVALID_OFFSET)));
     }
 
@@ -116,7 +116,7 @@ pub fn query(
             if result.start_day == 0 {
                 result.start_day = day;
             } else {
-                for d in prev_day + 1..day {
+                for _ in prev_day + 1..day {
                     result.daily_users.push(0);
                     result.daily_messages.push(0);
                 }
@@ -127,7 +127,7 @@ pub fn query(
         },
     )?;
     if let Some(dates) = dates.as_ref() {
-        for d in prev_day..dates.1 {
+        for _ in prev_day..dates.1 {
             result.daily_users.push(0);
             result.daily_messages.push(0);
         }

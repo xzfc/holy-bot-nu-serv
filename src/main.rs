@@ -27,8 +27,8 @@ fn main() {
             db_tg::update_from_file(&mut conn, &args[3]);
         }
         "sync-mx" => {
-            let mut db = db_mx::Db::new(&args[2]);
-            db.update_from_file(&args[3]);
+            let mut conn = Connection::open(&args[2]).unwrap();
+            db_mx::update_from_file(&mut conn, &args[3]);
         }
         "server" => {
             let mut conn = Connection::open(&args[2]).unwrap();
