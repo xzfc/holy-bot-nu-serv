@@ -23,10 +23,6 @@ fn main() {
     let args: Vec<String> = args().collect();
     match args.get(1).unwrap_or(&String::new()).as_ref() {
         "sync-tg" => {
-            let mut db = db::Db::new(&args[2]);
-            db.update_from_file(&args[3]);
-        }
-        "sync-tg2" => {
             let mut conn = Connection::open(&args[2]).unwrap();
             db_tg::update_from_file(&mut conn, &args[3]);
         }
@@ -35,12 +31,12 @@ fn main() {
             db.update_from_file(&args[3]);
         }
         "server" => {
-            let mut db = db::Db::new(&args[2]);
-            server::run(db);
+            let mut conn = Connection::open(&args[2]).unwrap();
+            server::run(conn);
         }
         "get-chat" => {
-            let mut db = db::Db::new(&args[2]);
-            match db.query_inner(&args[3], None, None) {
+            let mut conn = Connection::open(&args[2]).unwrap();
+            match db::query(&conn, &args[3], None, 0, None) {
                 Ok((status, res)) => println!("Status: {}\n{}", status, res),
                 Err(err) => println!("Error:\n{:?}", err),
             }

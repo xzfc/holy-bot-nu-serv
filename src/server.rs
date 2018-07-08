@@ -1,11 +1,11 @@
-use hyper::{Body, Response, Server};
-use hyper;
 use hyper::rt::Future;
 use hyper::service::service_fn_ok;
-
-use db::Db;
-use std::sync::Mutex;
+use hyper::{Body, Response, Server};
+use hyper;
+use rusqlite::Connection;
 use std::sync::Arc;
+use std::sync::Mutex;
+use super::db;
 
 use url::form_urlencoded;
 
@@ -66,17 +66,18 @@ fn parse_stats<'a>(uri: &'a hyper::Uri) -> Args<'a> {
     return Args::Unknown
 }
 
-pub fn run(db: Db) {
+pub fn run(conn: Connection) {
     let addr = ([127, 0, 0, 1], 3000).into();
-    let db = Arc::new(Mutex::new(db));
+    let conn = Arc::new(Mutex::new(conn));
 
     let new_svc = move || {
-        let db = db.clone();
+        let conn = conn.clone();
         service_fn_ok(move |req| {
-            let db = db.lock().unwrap();
+            let conn = conn.lock().unwrap();
             match parse_stats(req.uri()) {
                 Args::Stats(x) => {
-                    let (status, text) = db.query(
+                    let (status, text) = db::query_http(
+                        &conn,
                         x.chat, x.dates,
                         x.user.as_ref().map(|x| &**x),
                         );
