@@ -35,6 +35,7 @@ pub fn query_http(
 }
 
 const ERR_INVALID_OFFSET: &str = r#"{"error":"invalid offset"}"#;
+const ERR_INVALID_DATES:  &str = r#"{"error":"invalid dates"}"#;
 const ERR_CHAT_NOT_FOUND: &str = r#"{"error":"chat not found"}"#;
 const ERR_USER_NOT_FOUND: &str = r#"{"error":"user not found"}"#;
 
@@ -48,6 +49,12 @@ pub fn query(
 
     if offset < -12 || offset > 12 {
         return Ok((400, String::from(ERR_INVALID_OFFSET)));
+    }
+
+    if let Some((from, to)) = dates {
+        if from < 17000 || to < 17000 || to - from > 1000 {
+            return Ok((400, String::from(ERR_INVALID_DATES)));
+        }
     }
 
     let (chat_id, chat_title) = match search_chat(conn, chat) {

@@ -76,6 +76,7 @@ pub fn process_log<T: LogProcessor>(
         }
     }
 
+    eprintln!("process_log: processed {} lines", lineno);
     try_abort!( processor.commit(total_bytes) );
 
     Ok(())
