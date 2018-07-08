@@ -6,6 +6,9 @@ use super::serde_json;
 
 #[derive(Debug, Serialize)]
 pub struct QueryResult {
+    title: String,
+    hours: (i64, i64),
+
     start_day: i64,
     daily_users: Vec<i64>,
     daily_messages: Vec<i64>,
@@ -22,13 +25,18 @@ pub fn query_http(
     conn: &Connection,
     chat: &str,
     dates: Option<(i64, i64)>,
+    offset: i64,
     user_id: Option<&str>,
 ) -> (u16 ,String) {
-    match query(conn, chat, dates, 0, user_id) {
+    match query(conn, chat, dates, offset, user_id) {
         Ok(res) => res,
         Err(e) => (500, format!("Error:\n{:?}", e)),
     }
 }
+
+const ERR_INVALID_OFFSET: &str = r#"{"error":"invalid offset"}"#;
+const ERR_CHAT_NOT_FOUND: &str = r#"{"error":"chat not found"}"#;
+const ERR_USER_NOT_FOUND: &str = r#"{"error":"user not found"}"#;
 
 pub fn query(
     conn: &Connection,
@@ -37,19 +45,27 @@ pub fn query(
     offset: i64,
     user_rid: Option<&str>,
 ) -> Result<(u16, String), MyError> {
+
+    if (offset < -12 || offset > 12) {
+        return Ok((400, String::from(ERR_INVALID_OFFSET)));
+    }
+
     let chat_id = match search_chat(conn, chat) {
         Some(chat_id) => chat_id,
-        None => {
-            return Ok((404, String::from(r#"{"error":"chat not found"}"#)));
-        }
+        None => return Ok((404, String::from(ERR_CHAT_NOT_FOUND))),
     };
 
     let mut result = QueryResult {
+        title: String::new(),
+        hours: (0, 0),
+
         start_day: 0,
         daily_users: Vec::new(),
         daily_messages: Vec::new(),
+
         messages_by_hour: [0; 24],
         messages_by_weekday: [0; 7],
+
         user_ids: Vec::new(),
         user_names: Vec::new(),
         messages_by_user: Vec::new(),
@@ -62,22 +78,17 @@ pub fn query(
     args.push((":offset", &offset));
 
     let mut filter = String::from("");
-    /*
     if let Some(user_rid) = user_rid.as_ref() {
         let user_id =
             match search_user(conn, user_rid) {
                 Some(user_id) => user_id,
-                None =>
-                    return Ok((
-                            404, String::from(
-                                r#"{"error":"user not found"}"#))),
+                None => return Ok((404, String::from(ERR_USER_NOT_FOUND))),
             };
 
         filter += "AND :user_id = messages.user_id ";
         _user_id = user_id;
         args.push((":user_id",  &_user_id));
     }
-    */
     if let Some(hours) = hours.as_ref() {
         filter += "AND hour BETWEEN :hour_from AND :hour_to ";
         result.start_day = hours.0 / 24;
@@ -176,6 +187,14 @@ pub fn query(
             result.messages_by_user.push(row.get(2));
         },
     )?;
+
+    result.hours = conn.query_row_named(
+        "
+            SELECT MIN(hour), MAX(hour)
+              FROM messages
+             WHERE chat_id = :chat_id
+        ", &[(":chat_id", &chat_id)],
+        |row| (row.get::<_,i64>(0), row.get::<_,i64>(1)))?;
 
     return Ok((200, serde_json::to_string(&result).unwrap()))
 }

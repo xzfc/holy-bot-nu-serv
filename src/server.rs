@@ -12,6 +12,7 @@ use url::form_urlencoded;
 struct StatsArgs<'a> {
     chat: &'a str,
     dates: Option<(i64, i64)>,
+    offset: i64,
     user: Option<String>,
 }
 
@@ -40,12 +41,14 @@ fn parse_stats<'a>(uri: &'a hyper::Uri) -> Args<'a> {
     if segments.len() == 2 && segments[0] == "stats" {
         let mut from = None;
         let mut to = None;
+        let mut offset = None;
         let mut user: Option<String> = None;
         for (key, val) in query {
             match &*key {
-                "from" => from    = Some(try2!(val.parse())),
-                "to"   => to      = Some(try2!(val.parse())),
-                "user" => user = Some(val.to_owned().to_string()),
+                "from"   => from   = Some(try2!(val.parse())),
+                "to"     => to     = Some(try2!(val.parse())),
+                "offset" => offset = Some(try2!(val.parse())),
+                "user"   => user   = Some(val.to_owned().to_string()),
                 _ => return Args::Invalid,
             }
         }
@@ -59,6 +62,7 @@ fn parse_stats<'a>(uri: &'a hyper::Uri) -> Args<'a> {
         return Args::Stats(StatsArgs {
             chat: segments[1],
             dates: dates,
+            offset: offset.unwrap_or(0),
             user: user,
         })
     }
@@ -78,7 +82,7 @@ pub fn run(conn: Connection) {
                 Args::Stats(x) => {
                     let (status, text) = db::query_http(
                         &conn,
-                        x.chat, x.dates,
+                        x.chat, x.dates, x.offset,
                         x.user.as_ref().map(|x| &**x),
                         );
                     Response::builder()
@@ -95,7 +99,7 @@ pub fn run(conn: Connection) {
                     Response::builder()
                         .header("Access-Control-Allow-Origin", "*")
                         .status(400)
-                        .body(Body::from("404")),
+                        .body(Body::from("400")),
             }.unwrap()
         })
     };
