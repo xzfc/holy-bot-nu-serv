@@ -9,7 +9,7 @@ pub fn query_map_named<F>(
     params: &[(&str, &ToSql)],
     f: F,
 ) -> Result<(), MyError>
-  where
+where
     F: FnMut(&Row) -> (),
 {
     let mut ff = f; // XXX: WTF?
@@ -25,7 +25,8 @@ pub fn query_row<T, F>(
     params: &[&ToSql],
     f: F,
 ) -> Result<Option<T>, Error>
-  where F: FnOnce(&Row) -> T
+where
+    F: FnOnce(&Row) -> T,
 {
     match conn.query_row(sql, params, f) {
         Ok(x) => Ok(Some(x)),

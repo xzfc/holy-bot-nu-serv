@@ -27,7 +27,7 @@ pub fn query_http(
     dates: Option<(i64, i64)>,
     offset: i64,
     user_id: Option<&str>,
-) -> (u16 ,String) {
+) -> (u16, String) {
     match query(conn, chat, dates, offset, user_id) {
         Ok(res) => res,
         Err(e) => (500, format!("Error:\n{:?}", e)),
@@ -79,11 +79,10 @@ pub fn query(
 
     let mut filter = String::from("");
     if let Some(user_rid) = user_rid.as_ref() {
-        let user_id =
-            match search_user(conn, user_rid) {
-                Some(user_id) => user_id,
-                None => return Ok((404, String::from(ERR_USER_NOT_FOUND))),
-            };
+        let user_id = match search_user(conn, user_rid) {
+            Some(user_id) => user_id,
+            None => return Ok((404, String::from(ERR_USER_NOT_FOUND))),
+        };
 
         filter += "AND :user_id = messages.user_id ";
         _user_id = user_id;
@@ -193,10 +192,12 @@ pub fn query(
             SELECT MIN(hour), MAX(hour)
               FROM messages
              WHERE chat_id = :chat_id
-        ", &[(":chat_id", &chat_id)],
-        |row| (row.get::<_,i64>(0), row.get::<_,i64>(1)))?;
+        ",
+        &[(":chat_id", &chat_id)],
+        |row| (row.get::<_, i64>(0), row.get::<_, i64>(1)),
+    )?;
 
-    return Ok((200, serde_json::to_string(&result).unwrap()))
+    Ok((200, serde_json::to_string(&result).unwrap()))
 }
 
 fn search_chat(conn: &Connection, chat: &str) -> Option<i64> {
@@ -208,7 +209,8 @@ fn search_chat(conn: &Connection, chat: &str) -> Option<i64> {
                 OR rnd_id = ?1
         ",
         &[&chat],
-        |row| row.get::<_,i64>(0));
+        |row| row.get::<_, i64>(0),
+    );
     match res {
         Ok(x) => Some(x),
         Err(_) => None,
@@ -223,7 +225,8 @@ fn search_user(conn: &Connection, random_id: &str) -> Option<i64> {
              WHERE rnd_id = ?
         ",
         &[&random_id],
-        |row| row.get::<_, i64>(0));
+        |row| row.get::<_, i64>(0),
+    );
     match res {
         Ok(x) => Some(x),
         Err(_) => None,

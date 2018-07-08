@@ -1,48 +1,62 @@
-use rusqlite::Connection;
+use rusqlite::{Connection, Error};
 use super::db_util;
 use super::error::MyError;
 use super::process_log;
 use super::serde_json;
 
-use telegram_bot_raw::{Update, UpdateKind, User, Integer, MessageOrChannelPost, MessageChat};
+use telegram_bot_raw::{
+    Integer,
+    MessageChat,
+    MessageOrChannelPost,
+    Update,
+    UpdateKind,
+    User,
+};
 
 pub fn update_from_file(conn: &mut Connection, path: &str) {
-    let err = process_log::process_log(path, &mut DbTg{conn:conn});
+    let err = process_log::process_log(path, &mut DbTg { conn: conn });
     eprintln!("err = {:?}", err);
 }
 
 
-fn update(conn: &mut Connection, upd: Update) -> Result<(), MyError> {
+fn update(conn: &mut Connection, upd: Update) -> Result<(), Error> {
     if let UpdateKind::Message(msg) = upd.kind {
         let user_id = update_user(conn, &msg.from)?;
         let chat_id = match update_chat(conn, &msg.chat)? {
-            Some(x) => x, None => return Ok(()),
+            Some(x) => x,
+            None => return Ok(()),
         };
 
-        conn.execute("
-            INSERT INTO messages(chat_id, user_id, hour, count)
-            VALUES ( ?1, ?2, ?3, 1 )
-            ON CONFLICT (chat_id, user_id, hour)
-            DO UPDATE SET count = count + 1
-        ", &[
-            &chat_id,
-            &user_id,
-            &(msg.date/60/60),
-        ])?;
+        conn.execute(
+            "
+                INSERT INTO messages(chat_id, user_id, hour, count)
+                VALUES ( ?1, ?2, ?3, 1 )
+                ON CONFLICT (chat_id, user_id, hour)
+                DO UPDATE SET count = count + 1
+            ",
+            &[
+                &chat_id,
+                &user_id,
+                &(msg.date/60/60),
+            ],
+        )?;
 
         if let Some(reply) = msg.reply_to_message {
             if let MessageOrChannelPost::Message(reply) = *reply {
                 let reply_user_id = update_user(conn, &reply.from)?;
-                conn.execute("
-                    INSERT INTO replies(chat_id, from_uid, to_uid, count)
-                    VALUES ( ?1, ?2, ?3, 1 )
-                    ON CONFLICT (chat_id, from_uid, to_uid)
-                    DO UPDATE SET count = count + 1
-                    ", &[
+                conn.execute(
+                    "
+                        INSERT INTO replies(chat_id, from_uid, to_uid, count)
+                        VALUES ( ?1, ?2, ?3, 1 )
+                        ON CONFLICT (chat_id, from_uid, to_uid)
+                        DO UPDATE SET count = count + 1
+                    ",
+                    &[
                         &chat_id,
                         &user_id,
-                        &reply_user_id
-                    ])?;
+                        &reply_user_id,
+                    ],
+                )?;
             }
         }
     }
@@ -50,35 +64,44 @@ fn update(conn: &mut Connection, upd: Update) -> Result<(), MyError> {
     Ok(())
 }
 
-fn update_user(conn: &mut Connection, user: &User) -> Result<i64, MyError> {
+fn update_user(conn: &mut Connection, user: &User) -> Result<i64, Error> {
     let name = match &user.last_name {
         Some(last_name) => format!("{} {}", user.first_name, last_name),
         None => user.first_name.clone(),
     };
 
     let db_id = db_util::query_row(
-        conn, "
+        conn,
+        "
             SELECT id
               FROM users
              WHERE kind = 0
                AND ext_id = ?
-        ", &[&Integer::from(user.id)],
-        |row| row.get::<_, i64>(0))?;
+        ",
+        &[&Integer::from(user.id)],
+        |row| row.get::<_, i64>(0),
+    )?;
 
     let db_id = match db_id {
         Some(db_id) => {
-            conn.execute("
-                UPDATE users
-                   SET name = ?
-                 WHERE id = ?
-                 ", &[&name, &db_id])?;
+            conn.execute(
+                "
+                    UPDATE users
+                       SET name = ?
+                     WHERE id = ?
+                ",
+                &[&name, &db_id],
+            )?;
             db_id
         }
         None => {
-            conn.execute("
-                INSERT INTO users(kind, ext_id, rnd_id, name)
-                VALUES (0, ?, ?, ?)
-            ", &[&Integer::from(user.id), &db_util::random_id(), &name])?;
+            conn.execute(
+                "
+                    INSERT INTO users(kind, ext_id, rnd_id, name)
+                    VALUES (0, ?, ?, ?)
+                ",
+                &[&Integer::from(user.id), &db_util::random_id(), &name],
+            )?;
             conn.last_insert_rowid()
         }
     };
@@ -86,7 +109,10 @@ fn update_user(conn: &mut Connection, user: &User) -> Result<i64, MyError> {
     Ok(db_id)
 }
 
-fn update_chat(conn: &mut Connection, chat: &MessageChat) -> Result<Option<i64>, MyError> {
+fn update_chat(
+    conn: &mut Connection,
+    chat: &MessageChat
+) -> Result<Option<i64>, Error> {
     let (tg_id, title, username) = match &chat {
         MessageChat::Private(_) => return Ok(None),
         MessageChat::Unknown(_) => return Ok(None),
@@ -98,22 +124,28 @@ fn update_chat(conn: &mut Connection, chat: &MessageChat) -> Result<Option<i64>,
     let username = username.clone().map(|x| format!("@{}", x));
 
     let db_id = db_util::query_row(
-        conn, "
+        conn,
+        "
             SELECT id
               FROM chats
              WHERE kind = 0
                AND ext_id = ?
-        ", &[&tg_id],
-        |row| row.get::<_, i64>(0))?;
+        ",
+        &[&tg_id],
+        |row| row.get::<_, i64>(0),
+    )?;
 
     let db_id = match db_id {
         Some(db_id) => {
-            conn.execute("
-                UPDATE chats
-                   SET name = ?
-                     , alias = ?
-                 WHERE id = ?
-                 ", &[title, &username, &db_id])?;
+            conn.execute(
+                "
+                    UPDATE chats
+                       SET name = ?
+                         , alias = ?
+                     WHERE id = ?
+                 ",
+                 &[title, &username, &db_id],
+            )?;
             db_id
         }
         None => {
@@ -141,7 +173,8 @@ impl<'a> process_log::LogProcessor for DbTg<'a> {
             self.conn,
             "SELECT value FROM kv WHERE name = 'telegram_seek'",
             &[],
-            |row| row.get::<_,i64>(0))?;
+            |row| row.get::<_,i64>(0),
+        )?;
         match seek {
             Some(value) => Ok(Some(value as u64)),
             None => Ok(None),
@@ -150,7 +183,8 @@ impl<'a> process_log::LogProcessor for DbTg<'a> {
     fn commit(&mut self, end_pos: u64) -> Result<(), Self::Error> {
         self.conn.execute(
             "INSERT OR REPLACE INTO kv VALUES ('telegram_seek', ?)",
-            &[&(end_pos as i64)])?;
+            &[&(end_pos as i64)],
+        )?;
         self.conn.execute("COMMIT", &[])?;
         Ok(())
     }
@@ -160,7 +194,7 @@ impl<'a> process_log::LogProcessor for DbTg<'a> {
     }
     fn process_line(&mut self, line: &String) -> Result<(), Self::Error> {
         match serde_json::from_str::<Update>(line) {
-            Ok(upd) => { update(self.conn, upd) },
+            Ok(upd) => Ok(update(self.conn, upd)?),
             Err(err) => {
                 eprintln!("Line: {}\nParse error: {}\n", line, err);
                 Ok(())

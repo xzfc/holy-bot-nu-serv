@@ -11,10 +11,10 @@ pub enum MyError {
 }
 impl error::Error for MyError {
     fn description(&self) -> &str {
-        return "Shit happens"
+        "Shit happens"
     }
     fn cause(&self) -> Option<&error::Error> {
-        return None;
+        None
     }
 }
 impl fmt::Display for MyError {

@@ -28,8 +28,8 @@ pub trait LogProcessor {
 // }
 pub fn process_log<T: LogProcessor>(
     fname: &str,
-    processor: &mut T) ->
-    Result<(), T::Error> {
+    processor: &mut T,
+) -> Result<(), T::Error> {
     // Same as `try!` but also call `processor.abort()` on failure.
     macro_rules! try_abort {
         ($e:expr) => {
@@ -68,8 +68,10 @@ pub fn process_log<T: LogProcessor>(
             try_abort!( processor.commit(total_bytes) );
             let ensure_total_bytes = processor.begin()?;
             if ensure_total_bytes != Some(total_bytes) {
-                eprintln!("process_log: error ensure_total_bytes != total_bytes");
-                return Ok(()) // TODO: return error
+                eprintln!(
+                    "process_log: error ensure_total_bytes != total_bytes"
+                );
+                return Ok(()); // TODO: return error
             }
         }
     }

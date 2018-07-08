@@ -22,7 +22,7 @@ enum Args<'a> {
     Invalid,
 }
 
-fn parse_stats<'a>(uri: &'a hyper::Uri) -> Args<'a> { 
+fn parse_stats<'a>(uri: &'a hyper::Uri) -> Args<'a> {
     macro_rules! try2 {
         ($e:expr) => {
             match $e {
@@ -32,9 +32,8 @@ fn parse_stats<'a>(uri: &'a hyper::Uri) -> Args<'a> {
         };
     }
 
-    let query: form_urlencoded::Parse = form_urlencoded::parse(
-        uri.query().unwrap_or("").as_bytes()
-    );
+    let query: form_urlencoded::Parse =
+        form_urlencoded::parse(uri.query().unwrap_or("").as_bytes());
 
     let segments : Vec<&'a str> = uri.path()[1..].split('/').collect();
 
@@ -64,10 +63,10 @@ fn parse_stats<'a>(uri: &'a hyper::Uri) -> Args<'a> {
             dates: dates,
             offset: offset.unwrap_or(0),
             user: user,
-        })
+        });
     }
 
-    return Args::Unknown
+    return Args::Unknown;
 }
 
 pub fn run(conn: Connection) {
@@ -82,9 +81,11 @@ pub fn run(conn: Connection) {
                 Args::Stats(x) => {
                     let (status, text) = db::query_http(
                         &conn,
-                        x.chat, x.dates, x.offset,
+                        x.chat,
+                        x.dates,
+                        x.offset,
                         x.user.as_ref().map(|x| &**x),
-                        );
+                    );
                     Response::builder()
                         .header("Access-Control-Allow-Origin", "*")
                         .status(status)
