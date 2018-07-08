@@ -50,13 +50,13 @@ pub fn query(
         return Ok((400, String::from(ERR_INVALID_OFFSET)));
     }
 
-    let chat_id = match search_chat(conn, chat) {
-        Some(chat_id) => chat_id,
+    let (chat_id, chat_title) = match search_chat(conn, chat) {
+        Some(x) => x,
         None => return Ok((404, String::from(ERR_CHAT_NOT_FOUND))),
     };
 
     let mut result = QueryResult {
-        title: String::new(),
+        title: chat_title,
         hours: (0, 0),
 
         start_day: 0,
@@ -72,7 +72,7 @@ pub fn query(
     };
 
     let mut _user_id: i64 = 0;
-    let hours = dates.map(|(a,b)| (a*24 - offset, b*24 - offset));
+    let hours = dates.map(|(a,b)| (a, a*24 - offset, b*24 - offset + 23));
     let mut args: Vec<(&str, &ToSql)> = Vec::new();
     args.push((":chat_id", &chat_id));
     args.push((":offset", &offset));
@@ -90,10 +90,10 @@ pub fn query(
     }
     if let Some(hours) = hours.as_ref() {
         filter += "AND hour BETWEEN :hour_from AND :hour_to ";
-        result.start_day = hours.0 / 24;
+        result.start_day = hours.0;
 
-        args.push((":hour_from", &hours.0));
-        args.push((":hour_to",   &hours.1));
+        args.push((":hour_from", &hours.1));
+        args.push((":hour_to",   &hours.2));
     }
     let args = args.as_slice();
 
@@ -200,16 +200,16 @@ pub fn query(
     Ok((200, serde_json::to_string(&result).unwrap()))
 }
 
-fn search_chat(conn: &Connection, chat: &str) -> Option<i64> {
+fn search_chat(conn: &Connection, chat: &str) -> Option<(i64, String)> {
     let res = conn.query_row(
         "
-            SELECT id
+            SELECT id, name
               FROM chats
              WHERE alias = ?1
                 OR rnd_id = ?1
         ",
         &[&chat],
-        |row| row.get::<_, i64>(0),
+        |row| (row.get(0), row.get(1)),
     );
     match res {
         Ok(x) => Some(x),
