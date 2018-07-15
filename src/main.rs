@@ -36,7 +36,7 @@ fn main() {
         }
         "get-chat" => {
             let mut conn = Connection::open(&args[2]).unwrap();
-            match db::query(&conn, &args[3], None, 0, None) {
+            match db::query(&conn, &args[3], None, 0, None, None) {
                 Ok((status, res)) => println!("Status: {}\n{}", status, res),
                 Err(err) => println!("Error:\n{:?}", err),
             }

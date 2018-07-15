@@ -14,6 +14,7 @@ struct StatsArgs<'a> {
     dates: Option<(i64, i64)>,
     offset: i64,
     user: Option<String>,
+    weekday: Option<u8>,
 }
 
 enum Args<'a> {
@@ -42,12 +43,14 @@ fn parse_stats<'a>(uri: &'a hyper::Uri) -> Args<'a> {
         let mut to = None;
         let mut offset = None;
         let mut user: Option<String> = None;
+        let mut weekday = None;
         for (key, val) in query {
             match &*key {
-                "from"   => from   = Some(try2!(val.parse())),
-                "to"     => to     = Some(try2!(val.parse())),
-                "offset" => offset = Some(try2!(val.parse())),
-                "user"   => user   = Some(val.to_owned().to_string()),
+                "from"    => from    = Some(try2!(val.parse())),
+                "to"      => to      = Some(try2!(val.parse())),
+                "offset"  => offset  = Some(try2!(val.parse())),
+                "user"    => user    = Some(val.to_owned().to_string()),
+                "weekday" => weekday = Some(try2!(val.parse())),
                 _ => return Args::Invalid,
             }
         }
@@ -63,6 +66,7 @@ fn parse_stats<'a>(uri: &'a hyper::Uri) -> Args<'a> {
             dates: dates,
             offset: offset.unwrap_or(0),
             user: user,
+            weekday: weekday,
         });
     }
 
@@ -85,6 +89,7 @@ pub fn run(conn: Connection) {
                         x.dates,
                         x.offset,
                         x.user.as_ref().map(|x| &**x),
+                        x.weekday,
                     );
                     Response::builder()
                         .header("Access-Control-Allow-Origin", "*")

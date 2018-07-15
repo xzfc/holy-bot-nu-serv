@@ -10,6 +10,7 @@ pub struct QueryResult {
     hours: (i64, i64),
 
     start_day: i64,
+    skip_day: i64,
     daily_users: Vec<i64>,
     daily_messages: Vec<i64>,
 
@@ -27,17 +28,19 @@ pub fn query_http(
     dates: Option<(i64, i64)>,
     offset: i64,
     user_id: Option<&str>,
+    weekday: Option<u8>,
 ) -> (u16, String) {
-    match query(conn, chat, dates, offset, user_id) {
+    match query(conn, chat, dates, offset, user_id, weekday) {
         Ok(res) => res,
         Err(e) => (500, format!("Error:\n{:?}", e)),
     }
 }
 
-const ERR_INVALID_OFFSET: &str = r#"{"error":"invalid offset"}"#;
-const ERR_INVALID_DATES:  &str = r#"{"error":"invalid dates"}"#;
-const ERR_CHAT_NOT_FOUND: &str = r#"{"error":"chat not found"}"#;
-const ERR_USER_NOT_FOUND: &str = r#"{"error":"user not found"}"#;
+const ERR_INVALID_OFFSET:  &str = r#"{"error":"invalid offset"}"#;
+const ERR_INVALID_DATES:   &str = r#"{"error":"invalid dates"}"#;
+const ERR_INVALID_WEEKDAY: &str = r#"{"error":"invalid weekday"}"#;
+const ERR_CHAT_NOT_FOUND:  &str = r#"{"error":"chat not found"}"#;
+const ERR_USER_NOT_FOUND:  &str = r#"{"error":"user not found"}"#;
 
 pub fn query(
     conn: &Connection,
@@ -45,10 +48,17 @@ pub fn query(
     dates: Option<(i64, i64)>,
     offset: i64,
     user_rid: Option<&str>,
+    weekday: Option<u8>,
 ) -> Result<(u16, String), MyError> {
 
     if offset < -12 || offset > 12 {
         return Ok((400, String::from(ERR_INVALID_OFFSET)));
+    }
+
+    if let Some(weekday) = weekday {
+        if weekday >= 7 {
+            return Ok((400, String::from(ERR_INVALID_WEEKDAY)));
+        }
     }
 
     if let Some((from, to)) = dates {
@@ -67,6 +77,7 @@ pub fn query(
         hours: (0, 0),
 
         start_day: 0,
+        skip_day: 1,
         daily_users: Vec::new(),
         daily_messages: Vec::new(),
 
@@ -79,6 +90,7 @@ pub fn query(
     };
 
     let mut _user_id: i64 = 0;
+    let mut _weekday: u8 = 0;
     let hours = dates.map(|(a,b)| (a, a*24 - offset, b*24 - offset + 23));
     let mut args: Vec<(&str, &ToSql)> = Vec::new();
     args.push((":chat_id", &chat_id));
@@ -102,6 +114,15 @@ pub fn query(
         args.push((":hour_from", &hours.1));
         args.push((":hour_to",   &hours.2));
     }
+    if let Some(weekday) = weekday {
+        filter += "AND (hour + :offset)/24%7 = :weekday";
+        _weekday = (weekday + 4)%7;
+        result.skip_day = 7;
+        if result.start_day != 0 {
+            result.start_day += 6 - (result.start_day - weekday as i64 + 2) % 7;
+        }
+        args.push((":weekday",  &_weekday));
+    }
     let args = args.as_slice();
 
     let mut prev_day = result.start_day - 1;
@@ -122,18 +143,33 @@ pub fn query(
             if result.start_day == 0 {
                 result.start_day = day;
             } else {
-                for _ in prev_day + 1..day {
+                for d in prev_day + 1..day {
+                    if let Some(weekday) = weekday {
+                        if weekday as i64 != (d+3) % 7 {
+                            continue
+                        }
+                    }
                     result.daily_users.push(0);
                     result.daily_messages.push(0);
                 }
             }
             prev_day = day;
+            if let Some(weekday) = weekday {
+                if weekday as i64 != (day + 3) % 7 {
+                    println!("Shit! {} {}", weekday, (day + 3) % 7);
+                }
+            }
             result.daily_users.push(row.get(1));
             result.daily_messages.push(row.get(2));
         },
     )?;
     if let Some(dates) = dates.as_ref() {
-        for _ in prev_day..dates.1 {
+        for d in prev_day..dates.1 {
+            if let Some(weekday) = weekday {
+                if weekday as i64 != (d+4) % 7 {
+                    continue
+                }
+            }
             result.daily_users.push(0);
             result.daily_messages.push(0);
         }
