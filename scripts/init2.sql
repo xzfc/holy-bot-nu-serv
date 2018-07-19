@@ -61,6 +61,13 @@ CREATE TABLE IF NOT EXISTS kv (
 );
 
 
+CREATE TABLE IF NOT EXISTS chats_mx (
+    id         NUMBER PRIMARY KEY,
+    sync_start TEXT NOT NULL,
+    sync_end   TEXT NOT NULL,
+    FOREIGN KEY(id) REFERENCES chats(id)
+);
+
 
 /*
 
