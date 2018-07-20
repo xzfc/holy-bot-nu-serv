@@ -12,6 +12,7 @@ stdenv.mkDerivation {
   name = "batch";
   nativeBuildInputs = [
     cargo rustc sqlite-3-24
+    openssl pkgconfig
     # Dev depends
     rustfmt patchelf rustracer
   ];

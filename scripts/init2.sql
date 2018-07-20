@@ -69,6 +69,14 @@ CREATE TABLE IF NOT EXISTS chats_mx (
 );
 
 
+CREATE TABLE IF NOT EXISTS users_tg (
+    id         NUMBER PRIMARY KEY,
+    last_upd   DATETIME NOT NULL,
+    doc        TEXT,
+    FOREIGN KEY(id) REFERENCES users(id)
+);
+
+
 /*
 
 CREATE INDEX IF NOT EXISTS users_i0
