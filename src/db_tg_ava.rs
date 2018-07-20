@@ -1,19 +1,15 @@
+use hyper::rt::Future;
+use reqwest;
 use rusqlite::{Connection};
+use std::fs::{File, remove_file};
+use std::io::copy;
 use super::db_util;
 use super::error::MyError;
-use super::serde_json;
-use telegram_bot::Api;
-use telegram_bot::Error;
+use telegram_bot::{Api, ErrorKind};
 use telegram_bot::types::requests::{GetUserProfilePhotos, GetFile};
-use telegram_bot::types::{UserId, FileRef, PhotoSize};
-use telegram_bot_raw::UserProfilePhotos;
+use telegram_bot::types::{UserId, PhotoSize};
+use telegram_bot_raw;
 use tokio_core::reactor::Core;
-use hyper::rt::Future;
-use futures::done;
-use reqwest;
-use std::io::copy;
-use std::fs::File;
-use std::fs;
 
 #[derive(Debug)]
 struct Row {
@@ -23,7 +19,7 @@ struct Row {
     old:     Option<String>,
 }
 
-fn db_get_rows(conn: &mut Connection) -> Result<Vec::<Row>, MyError> {
+fn db_get_rows(conn: &mut Connection) -> Result<Vec<Row>, MyError> {
     let mut rows = Vec::new();
     db_util::query_map_named(
         conn,
@@ -53,7 +49,7 @@ fn db_get_rows(conn: &mut Connection) -> Result<Vec::<Row>, MyError> {
 fn db_set_have(
     conn: &mut Connection,
     id: i64,
-    doc: Option<String>
+    doc: &Option<String>
 ) -> Result<(), MyError>
 {
     conn.execute(
@@ -61,12 +57,12 @@ fn db_set_have(
             INSERT OR REPLACE INTO users_tg(id, last_upd, doc)
             VALUES (?, +strftime('%s', 'now'), ?)
         ",
-        &[&id, &doc]
+        &[&id, doc]
     )?;
     Ok(())
 }
 
-fn getFile(file_id: String) -> GetFile {
+fn get_file(file_id: String) -> GetFile {
     GetFile::new(
         PhotoSize {
             file_id: file_id,
@@ -77,7 +73,7 @@ fn getFile(file_id: String) -> GetFile {
     )
 }
 
-fn saveToFile(
+fn save_to_file(
     token: &str,
     file_path: &str,
     save_path: &str,
@@ -105,10 +101,18 @@ fn yoba3 (
         );
     let new = match new {
         Ok(x) => x,
-        Err(x) => {
-            db_set_have(conn, row.id, None)?;
-            return Ok(())
-        },
+        Err(x) =>
+            match x.kind() {
+                ErrorKind::Raw(telegram_bot_raw::ErrorKind::TelegramError{description, parameters}) => {
+                    println!("{:?}", description);
+                    db_set_have(conn, row.id, &None)?;
+                    return Ok(())
+                }
+                e => {
+                    println!("Error: {:?}", e);
+                    return Ok(());
+                }
+            },
     };
     let new = new
         .photos.get(0)
@@ -119,15 +123,17 @@ fn yoba3 (
         if let Some(ref new) = new {
             let file_path =
                 core.run(
-                    api.send(getFile(new.to_string()))
+                    api.send(get_file(new.to_string()))
                     .map(|file| { file.file_path.unwrap() })
-                ).unwrap();
-            saveToFile(token, &file_path, &row.rnd_id);
+                )?;
+            save_to_file(token, &file_path, &row.rnd_id)?;
         } else {
-            fs::remove_file(format!("./ava/{}.jpg", row.rnd_id));
+            println!("Removing {}", row.rnd_id);
+            remove_file(format!("./ava/{}.jpg", row.rnd_id))?;
         }
-        db_set_have(conn, row.id, new)?;
+        db_set_have(conn, row.id, &new)?;
     } else {
+        db_set_have(conn, row.id, &row.old)?;
     }
     Ok(())
 }
@@ -141,7 +147,9 @@ pub fn update(
 
     for row in db_get_rows(conn)?.iter() {
         println!("{:?}", row);
-        yoba3(conn, &mut core, &api, token, row)?;
+        if let Err(e) = yoba3(conn, &mut core, &api, token, row) {
+            println!("Err: {}", e);
+        }
     }
 
     Ok(())
