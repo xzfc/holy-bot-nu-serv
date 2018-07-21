@@ -1,13 +1,13 @@
 use hyper::rt::Future;
 use reqwest;
-use rusqlite::{Connection};
+use rusqlite::Connection;
 use std::fs::{File, remove_file};
 use std::io::copy;
 use super::db_util;
 use super::error::MyError;
-use telegram_bot::{Api, ErrorKind};
 use telegram_bot::types::requests::{GetUserProfilePhotos, GetFile};
 use telegram_bot::types::{UserId, PhotoSize};
+use telegram_bot::{Api, ErrorKind};
 use telegram_bot_raw;
 use tokio_core::reactor::Core;
 
@@ -49,9 +49,8 @@ fn db_get_rows(conn: &mut Connection) -> Result<Vec<Row>, MyError> {
 fn db_set_have(
     conn: &mut Connection,
     id: i64,
-    doc: &Option<String>
-) -> Result<(), MyError>
-{
+    doc: &Option<String>,
+) -> Result<(), MyError> {
     conn.execute(
         "
             INSERT OR REPLACE INTO users_tg(id, last_upd, doc)
@@ -63,14 +62,12 @@ fn db_set_have(
 }
 
 fn get_file(file_id: String) -> GetFile {
-    GetFile::new(
-        PhotoSize {
-            file_id: file_id,
-            width: 0,
-            height: 0,
-            file_size: None
-        }
-    )
+    GetFile::new(PhotoSize {
+        file_id: file_id,
+        width: 0,
+        height: 0,
+        file_size: None
+    })
 }
 
 fn save_to_file(
@@ -78,7 +75,8 @@ fn save_to_file(
     file_path: &str,
     save_path: &str,
 ) -> Result<(), MyError> {
-    let url = format!("https://api.telegram.org/file/bot{}/{}", token, file_path);
+    let url =
+        format!("https://api.telegram.org/file/bot{}/{}", token, file_path);
     let mut resp = reqwest::get(url.as_str())?;
     assert!(resp.status().is_success());
 
