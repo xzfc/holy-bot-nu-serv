@@ -2,55 +2,34 @@
 
 Columns name convention:
     id     -- internal ids
-    tg_id  -- telegram id
-    rnd_id -- random unique textual id
-    name   -- display name
     kind   -- 0 - tg; 1 - mx
-
+    ext_id -- external id (numeric telegram id or textual matrix id)
+    rnd_id -- random unique textual id to be visible by API
+    name   -- display name
 */
 
 CREATE TABLE IF NOT EXISTS users (
     id       INTEGER NOT NULL PRIMARY KEY,
-    rnd_id   TEXT    NOT NULL UNIQUE,
+    kind     INTEGER NOT NULL,
+    ext_id           NOT NULL,
+    rnd_id   TEXT    NOT NULL,
     name     TEXT    NOT NULL,
-    kind     INTEGER NOT NULL
+
+    UNIQUE (kind, ext_id),
+    UNIQUE (rnd_id)
 );
-
-CREATE TABLE IF NOT EXISTS users_tg (
-    id       INTEGER NOT NULL PRIMARY KEY,
-    tg_id    INTEGER NOT NULL UNIQUE,
-
-    FOREIGN KEY (id) REFERENCES users(id)
-);
-
-CREATE TABLE IF NOT EXISTS users_mx (
-    id       INTEGER NOT NULL PRIMARY KEY,
-    mx_id    TEXT    NOT NULL UNIQUE,
-
-    FOREIGN KEY (id) REFERENCES users(id)
-);
-
 
 CREATE TABLE IF NOT EXISTS chats (
     id       INTEGER NOT NULL PRIMARY KEY,
-    rnd_id   TEXT    NOT NULL UNIQUE,
-    alias    TEXT,
+    kind     INTEGER NOT NULL,
+    ext_id           NOT NULL,
+    rnd_id   TEXT    NOT NULL,
     name     TEXT    NOT NULL,
-    kind     INTEGER NOT NULL
-);
+    alias    TEXT,
 
-CREATE TABLE IF NOT EXISTS chats_tg (
-    id       INTEGER NOT NULL PRIMARY KEY,
-    tg_id    INTEGER NOT NULL UNIQUE,
-
-    FOREIGN KEY (id) REFERENCES chats(id)
-);
-
-CREATE TABLE IF NOT EXISTS chats_mx (
-    id       INTEGER NOT NULL PRIMARY KEY,
-    mx_id    TEXT    NOT NULL UNIQUE,
-
-    FOREIGN KEY (id) REFERENCES chats(id)
+    UNIQUE (kind, ext_id),
+    UNIQUE (rnd_id),
+    UNIQUE (alias) ON CONFLICT REPLACE
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -81,6 +60,21 @@ CREATE TABLE IF NOT EXISTS kv (
     value
 );
 
+
+CREATE TABLE IF NOT EXISTS chats_mx (
+    id         NUMBER PRIMARY KEY,
+    sync_start TEXT NOT NULL,
+    sync_end   TEXT NOT NULL,
+    FOREIGN KEY(id) REFERENCES chats(id)
+);
+
+
+CREATE TABLE IF NOT EXISTS users_tg (
+    id         NUMBER PRIMARY KEY,
+    last_upd   DATETIME NOT NULL,
+    doc        TEXT,
+    FOREIGN KEY(id) REFERENCES users(id)
+);
 
 
 /*
