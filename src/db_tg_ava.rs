@@ -25,12 +25,11 @@ fn db_get_rows(conn: &mut Connection) -> Result<Vec<Row>, MyError> {
         conn,
         "
             SELECT users.id, users.rnd_id, users.ext_id, users_tg.doc
-              FROM users
-             LEFT JOIN users_tg
+              FROM users_tg
+             LEFT JOIN users
                     ON users.id = users_tg.id
-             WHERE users.kind = 0
-               AND users_tg.last_upd IS NULL
-                OR users_tg.last_upd + 60*60*24 > +strftime('%s', 'now');
+             WHERE users_tg.last_upd + 60*60*24
+                 < CAST(strftime('%s', 'now') AS INTEGER);
         ",
         &[],
         |row| {
