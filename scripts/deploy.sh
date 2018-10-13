@@ -6,6 +6,6 @@ cargo build --release
 cp -f ./target/release/batch ./target/holy-web
 patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 ./target/holy-web
 
-scp ./scripts/init.sql hedlx:~/holy_crackers_web
-scp ./target/holy-web hedlx:~/holy_crackers_web/holy-web.new
-ssh hedlx 'mv ~/holy_crackers_web/holy-web{.new,}'
+scp ./scripts/init.sql holy@tg:~/web
+scp ./target/holy-web holy@tg:~/web/holy-web.new
+ssh holy@tg 'mv ~/web/holy-web{.new,}'
